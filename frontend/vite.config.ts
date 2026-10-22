@@ -3,4 +3,13 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      '/api': {
+        target: process.env.FOGO_API_URL ?? 'https://localhost:7001',
+        changeOrigin: true,
+        secure: process.env.FOGO_API_INSECURE_TLS !== 'true',
+      },
+    },
+  },
 });

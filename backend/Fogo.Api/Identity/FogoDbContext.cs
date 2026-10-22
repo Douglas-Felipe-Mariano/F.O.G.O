@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Fogo.Api.Inventario;
 
 namespace Fogo.Api.Identity;
 
@@ -8,6 +9,7 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
     : IdentityDbContext<UsuarioFogo, IdentityRole, string>(options)
 {
     public DbSet<SessaoAtualizacao> SessoesAtualizacao => Set<SessaoAtualizacao>();
+    public DbSet<Equipamento> Equipamentos => Set<Equipamento>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -102,6 +104,44 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
                 .WithMany()
                 .HasForeignKey(sessao => sessao.UsuarioId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Equipamento>(entidade =>
+        {
+            entidade.ToTable("equipamentos", tabela =>
+            {
+                tabela.HasCheckConstraint(
+                    "CK_equipamentos_coordenadas_completas",
+                    "(latitude IS NULL AND longitude IS NULL) OR (latitude IS NOT NULL AND longitude IS NOT NULL)");
+                tabela.HasCheckConstraint("CK_equipamentos_latitude", "latitude IS NULL OR latitude BETWEEN -90 AND 90");
+                tabela.HasCheckConstraint("CK_equipamentos_longitude", "longitude IS NULL OR longitude BETWEEN -180 AND 180");
+                tabela.HasCheckConstraint("CK_equipamentos_manutencao", "(necessita_manutencao = FALSE AND tipo_manutencao IS NULL AND proxima_manutencao IS NULL) OR (necessita_manutencao = TRUE AND ((tipo_manutencao = 'Imediata' AND proxima_manutencao IS NULL) OR (tipo_manutencao IN ('Agendada', 'Periodica') AND proxima_manutencao IS NOT NULL)))");
+            });
+            entidade.HasKey(equipamento => equipamento.Id);
+            entidade.Property(equipamento => equipamento.Id).HasColumnName("id");
+            entidade.Property(equipamento => equipamento.Tipo).HasColumnName("tipo").HasMaxLength(60).IsRequired();
+            entidade.Property(equipamento => equipamento.NumeroSerie).HasColumnName("numero_serie").HasMaxLength(100).IsRequired();
+            entidade.Property(equipamento => equipamento.Marca).HasColumnName("marca").HasMaxLength(100);
+            entidade.Property(equipamento => equipamento.Modelo).HasColumnName("modelo").HasMaxLength(120);
+            entidade.Property(equipamento => equipamento.Cep).HasColumnName("cep").HasMaxLength(20).IsRequired();
+            entidade.Property(equipamento => equipamento.Bairro).HasColumnName("bairro").HasMaxLength(120).IsRequired();
+            entidade.Property(equipamento => equipamento.Cidade).HasColumnName("cidade").HasMaxLength(120).IsRequired();
+            entidade.Property(equipamento => equipamento.Uf).HasColumnName("uf").HasMaxLength(2).IsRequired();
+            entidade.Property(equipamento => equipamento.Rua).HasColumnName("rua").HasMaxLength(180).IsRequired();
+            entidade.Property(equipamento => equipamento.Referencia).HasColumnName("referencia").HasMaxLength(240);
+            entidade.Property(equipamento => equipamento.Latitude).HasColumnName("latitude").HasPrecision(9, 6);
+            entidade.Property(equipamento => equipamento.Longitude).HasColumnName("longitude").HasPrecision(9, 6);
+            entidade.Property(equipamento => equipamento.Situacao).HasColumnName("situacao").HasConversion<string>().HasMaxLength(40).IsRequired();
+            entidade.Property(equipamento => equipamento.NecessitaManutencao).HasColumnName("necessita_manutencao").IsRequired();
+            entidade.Property(equipamento => equipamento.TipoManutencao).HasColumnName("tipo_manutencao").HasConversion<string>().HasMaxLength(30);
+            entidade.Property(equipamento => equipamento.ProximaManutencao).HasColumnName("proxima_manutencao");
+            entidade.Property(equipamento => equipamento.OrigemDados).HasColumnName("origem_dados").HasConversion<string>().HasMaxLength(20).IsRequired();
+            entidade.Property(equipamento => equipamento.CriadoEm).HasColumnName("criado_em").IsRequired();
+            entidade.Property(equipamento => equipamento.AtualizadoEm).HasColumnName("atualizado_em").IsRequired();
+            entidade.HasIndex(equipamento => equipamento.NumeroSerie);
+            entidade.HasIndex(equipamento => equipamento.Tipo);
+            entidade.HasIndex(equipamento => equipamento.Situacao);
+            entidade.HasIndex(equipamento => equipamento.Bairro);
         });
     }
 }

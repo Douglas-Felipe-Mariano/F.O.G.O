@@ -1,5 +1,6 @@
 using System.Data;
 using Fogo.Api.Identity;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -11,16 +12,27 @@ public static class EndpointsAutenticacao
     public static IEndpointRouteBuilder MapearAutenticacao(this IEndpointRouteBuilder rotas)
     {
         var grupo = rotas.MapGroup("/api/autenticacao").WithTags("Autenticação");
-
+        grupo.MapGet("/csrf", EmitirTokenCsrf)
+            .AllowAnonymous()
+            .WithSummary("Emite cookie de CSRF para iniciar a autenticação web.");
         grupo.MapPost("/entrar", EntrarAsync)
+            .AllowAnonymous()
             .RequireRateLimiting("login")
             .WithSummary("Autentica um usuário e cria uma sessão.");
         grupo.MapPost("/atualizar", AtualizarAsync)
+            .AllowAnonymous()
             .WithSummary("Rotaciona o refresh token da sessão.");
         grupo.MapPost("/sair", SairAsync)
+            .AllowAnonymous()
             .WithSummary("Revoga a sessão atual.");
 
         return rotas;
+    }
+
+    private static IResult EmitirTokenCsrf(HttpContext contexto, OpcoesToken opcoes)
+    {
+        ProtecaoRequisicao.DefinirCookieCsrf(contexto, opcoes.CookiesSeguros);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> EntrarAsync(
@@ -35,7 +47,8 @@ public static class EndpointsAutenticacao
         IReadOnlyCollection<string> origensPermitidas,
         CancellationToken cancelamento)
     {
-        if (!ProtecaoRequisicao.OrigemPermitida(contexto, origensPermitidas))
+        if (!ProtecaoRequisicao.OrigemPermitida(contexto, origensPermitidas)
+            || !ProtecaoRequisicao.TokenCsrfValido(contexto))
         {
             return Results.Forbid();
         }

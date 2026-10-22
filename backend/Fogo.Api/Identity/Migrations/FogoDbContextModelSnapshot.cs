@@ -146,6 +146,135 @@ namespace Fogo.Api.Identity.Migrations
                     b.ToTable("usuarios", (string)null);
                 });
 
+            modelBuilder.Entity("Fogo.Api.Inventario.Equipamento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AtualizadoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("atualizado_em");
+
+                    b.Property<string>("Bairro")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("bairro");
+
+                    b.Property<string>("Cep")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("cep");
+
+                    b.Property<string>("Cidade")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("cidade");
+
+                    b.Property<DateTimeOffset>("CriadoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("criado_em");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("latitude");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("longitude");
+
+                    b.Property<string>("Marca")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("marca");
+
+                    b.Property<string>("Modelo")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("modelo");
+
+                    b.Property<bool>("NecessitaManutencao")
+                        .HasColumnType("boolean")
+                        .HasColumnName("necessita_manutencao");
+
+                    b.Property<string>("NumeroSerie")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("numero_serie");
+
+                    b.Property<string>("OrigemDados")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("origem_dados");
+
+                    b.Property<DateOnly?>("ProximaManutencao")
+                        .HasColumnType("date")
+                        .HasColumnName("proxima_manutencao");
+
+                    b.Property<string>("Referencia")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("referencia");
+
+                    b.Property<string>("Rua")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("rua");
+
+                    b.Property<string>("Situacao")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("situacao");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("tipo");
+
+                    b.Property<string>("TipoManutencao")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("tipo_manutencao");
+
+                    b.Property<string>("Uf")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("uf");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Bairro");
+
+                    b.HasIndex("NumeroSerie");
+
+                    b.HasIndex("Situacao");
+
+                    b.HasIndex("Tipo");
+
+                    b.ToTable("equipamentos", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_equipamentos_coordenadas_completas", "(latitude IS NULL AND longitude IS NULL) OR (latitude IS NOT NULL AND longitude IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_equipamentos_latitude", "latitude IS NULL OR latitude BETWEEN -90 AND 90");
+
+                            t.HasCheckConstraint("CK_equipamentos_longitude", "longitude IS NULL OR longitude BETWEEN -180 AND 180");
+
+                            t.HasCheckConstraint("CK_equipamentos_manutencao", "(necessita_manutencao = FALSE AND tipo_manutencao IS NULL AND proxima_manutencao IS NULL) OR (necessita_manutencao = TRUE AND ((tipo_manutencao = 'Imediata' AND proxima_manutencao IS NULL) OR (tipo_manutencao IN ('Agendada', 'Periodica') AND proxima_manutencao IS NOT NULL)))");
+                        });
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
