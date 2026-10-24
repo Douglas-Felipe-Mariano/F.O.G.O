@@ -22,10 +22,13 @@ public sealed class EquipamentoService(
         return equipamento is null ? null : EquipamentoResposta.De(equipamento);
     }
 
-    public async Task<MapaEquipamentosResposta> ListarLocalizacoesAsync(int limite, CancellationToken cancelamento)
+    public async Task<MapaEquipamentosResposta> ListarLocalizacoesAsync(
+        FiltrosMapaEquipamentos filtros,
+        int limite,
+        CancellationToken cancelamento)
     {
-        var total = await repositorio.ContarComCoordenadasAsync(cancelamento);
-        var equipamentos = await repositorio.ListarComCoordenadasAsync(limite, cancelamento);
+        var total = await repositorio.ContarComCoordenadasAsync(filtros, cancelamento);
+        var equipamentos = await repositorio.ListarComCoordenadasAsync(filtros, limite, cancelamento);
         var localizacoes = equipamentos.Select(equipamento => new LocalizacaoEquipamentoResposta(
             equipamento.Id,
             equipamento.Tipo,

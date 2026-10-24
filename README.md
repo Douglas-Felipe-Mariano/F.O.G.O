@@ -39,7 +39,7 @@ Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o 
 
 ## Validação executada
 
-- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: passou (24 testes; cobrem autorização, descoberta dos Controllers, contrato JSON, validações, bootstrap CSRF e modelo EF, mas não persistência nem fluxos completos de sessão).
+- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: passou (25 testes; incluem autorização, descoberta dos Controllers, contrato JSON, validações, bootstrap CSRF, modelo EF e encaminhamento de filtros do mapa, mas não persistência nem fluxos completos de sessão).
 - `dotnet build backend/Fogo.Api/Fogo.Api.csproj --no-restore`: passou.
 - Migration inicial do Identity e das sessões gerada em `backend/Fogo.Api/Identity/Migrations`; não foi aplicada porque PostgreSQL ainda não está instalado.
 - Migration incremental de equipamentos também gerada. O espelho SQL para leitura da arquitetura do banco está em `backend/database/CREATE.sql` e não contém dados iniciais.

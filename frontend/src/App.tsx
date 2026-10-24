@@ -69,6 +69,8 @@ function App() {
   const [visao, setVisao] = useState<'inventario' | 'mapa'>('inventario');
   const [pagina, setPagina] = useState(1);
   const [total, setTotal] = useState(0);
+  const [filtrosMapa, setFiltrosMapa] = useState<Filtros>(vazioFiltros);
+  const [pesquisaMapa, setPesquisaMapa] = useState<Filtros>(vazioFiltros);
   const [filtros, setFiltros] = useState<Filtros>(vazioFiltros);
   const [pesquisa, setPesquisa] = useState<Filtros>(vazioFiltros);
   const [erro, setErro] = useState('');
@@ -124,14 +126,18 @@ function App() {
     setCarregandoMapa(true);
     setErro('');
     try {
-      const resposta = await chamarApi(`/api/equipamentos/localizacoes?limite=${limite}`);
+      const parametros = new URLSearchParams({ limite: String(limite) });
+      if (pesquisaMapa.tipo) parametros.set('tipo', pesquisaMapa.tipo);
+      if (pesquisaMapa.situacao) parametros.set('situacao', pesquisaMapa.situacao);
+      if (pesquisaMapa.bairro) parametros.set('bairro', pesquisaMapa.bairro);
+      const resposta = await chamarApi(`/api/equipamentos/localizacoes?${parametros}`);
       setMapa(await resposta.json() as RespostaMapa);
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar as localizações.');
     } finally {
       setCarregandoMapa(false);
     }
-  }, [chamarApi, token]);
+  }, [chamarApi, pesquisaMapa, token]);
 
   useEffect(() => { void carregarDados(); }, [carregarDados]);
 
@@ -337,6 +343,13 @@ function App() {
               </div>
               <button className="button button-quiet" onClick={() => void carregarMapa()} disabled={carregandoMapa}>↻ Atualizar mapa</button>
             </div>
+            <form className="filters map-filters" onSubmit={(evento) => { evento.preventDefault(); setPesquisaMapa(filtrosMapa); }}>
+              <label>Tipo<input placeholder="Ex.: radar" value={filtrosMapa.tipo} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, tipo: evento.target.value })} /></label>
+              <label>Situação<select value={filtrosMapa.situacao} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, situacao: evento.target.value })}><option value="">Todas</option>{estados.map((estado) => <option key={estado.valor} value={estado.valor}>{estado.rotulo}</option>)}</select></label>
+              <label>Bairro<input value={filtrosMapa.bairro} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, bairro: evento.target.value })} /></label>
+              <button className="button button-secondary" type="submit">Aplicar filtros</button>
+              <button className="button button-quiet" type="button" onClick={() => { setFiltrosMapa(vazioFiltros); setPesquisaMapa(vazioFiltros); }}>Limpar</button>
+            </form>
             {mapa?.resultadoTruncado && <div className="mapa-alerta" role="status">
               <span>Exibindo {mapa.itens.length} de {mapa.totalComCoordenadas} equipamentos com coordenadas.</span>
               {mapa.limite < 1000

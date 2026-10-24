@@ -29,14 +29,17 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
     public Task<Equipamento?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento) =>
         banco.Equipamentos.SingleOrDefaultAsync(item => item.Id == id, cancelamento);
 
-    public Task<int> ContarComCoordenadasAsync(CancellationToken cancelamento) =>
-        banco.Equipamentos.AsNoTracking()
+    public Task<int> ContarComCoordenadasAsync(
+        FiltrosMapaEquipamentos filtros,
+        CancellationToken cancelamento) =>
+        AplicarFiltrosMapa(banco.Equipamentos.AsNoTracking(), filtros)
             .CountAsync(item => item.Latitude != null && item.Longitude != null, cancelamento);
 
     public async Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(
+        FiltrosMapaEquipamentos filtros,
         int limite,
         CancellationToken cancelamento) =>
-        await banco.Equipamentos.AsNoTracking()
+        await AplicarFiltrosMapa(banco.Equipamentos.AsNoTracking(), filtros)
             .Where(item => item.Latitude != null && item.Longitude != null)
             .OrderBy(item => item.Id)
             .Take(limite)
@@ -63,6 +66,28 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
     private static IQueryable<Equipamento> AplicarFiltros(
         IQueryable<Equipamento> consulta,
         FiltrosEquipamentos filtros)
+    {
+        if (!string.IsNullOrWhiteSpace(filtros.Tipo))
+        {
+            consulta = consulta.Where(item => item.Tipo == filtros.Tipo.Trim());
+        }
+
+        if (filtros.Situacao.HasValue)
+        {
+            consulta = consulta.Where(item => item.Situacao == filtros.Situacao.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtros.Bairro))
+        {
+            consulta = consulta.Where(item => item.Bairro == filtros.Bairro.Trim());
+        }
+
+        return consulta;
+    }
+
+    private static IQueryable<Equipamento> AplicarFiltrosMapa(
+        IQueryable<Equipamento> consulta,
+        FiltrosMapaEquipamentos filtros)
     {
         if (!string.IsNullOrWhiteSpace(filtros.Tipo))
         {

@@ -52,6 +52,9 @@ public sealed class EquipamentosController(EquipamentoService service) : Control
     [HttpGet("localizacoes")]
     public async Task<ActionResult<MapaEquipamentosResposta>> ListarLocalizacoesAsync(
         [FromQuery] int limite = 500,
+        [FromQuery] string? tipo = null,
+        [FromQuery] SituacaoEquipamento? situacao = null,
+        [FromQuery] string? bairro = null,
         CancellationToken cancelamento = default)
     {
         if (limite is < 1 or > 1000)
@@ -62,7 +65,17 @@ public sealed class EquipamentosController(EquipamentoService service) : Control
             }));
         }
 
-        return Ok(await service.ListarLocalizacoesAsync(limite, cancelamento));
+        if (situacao is { } valorSituacao
+            && (!Enum.IsDefined(valorSituacao) || valorSituacao == SituacaoEquipamento.NaoInformado))
+        {
+            return ValidationProblem(ModelStateFrom(new Dictionary<string, string[]>
+            {
+                ["situacao"] = ["Informe uma situação válida para filtrar."]
+            }));
+        }
+
+        var filtros = new FiltrosMapaEquipamentos(tipo, situacao, bairro);
+        return Ok(await service.ListarLocalizacoesAsync(filtros, limite, cancelamento));
     }
 
     [HttpPost]

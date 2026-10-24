@@ -9,14 +9,19 @@ public sealed record FiltrosEquipamentos(
     SituacaoEquipamento? Situacao,
     string? Bairro);
 
+public sealed record FiltrosMapaEquipamentos(
+    string? Tipo,
+    SituacaoEquipamento? Situacao,
+    string? Bairro);
+
 public interface IEquipamentoRepository
 {
     Task<int> ContarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento);
     Task<IReadOnlyCollection<Equipamento>> ListarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento);
     Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento);
     Task<Equipamento?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento);
-    Task<int> ContarComCoordenadasAsync(CancellationToken cancelamento);
-    Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(int limite, CancellationToken cancelamento);
+    Task<int> ContarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, CancellationToken cancelamento);
+    Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, int limite, CancellationToken cancelamento);
     Task<IReadOnlyCollection<ContagemSituacao>> ContarPorSituacaoAsync(CancellationToken cancelamento);
     Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento);
     Task AdicionarAsync(Equipamento equipamento, CancellationToken cancelamento);
