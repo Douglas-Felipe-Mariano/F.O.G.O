@@ -6,9 +6,9 @@ Ferramenta Onisciente de Gestão e Operações — etapa bônus do desafio da Ds
 
 O desafio está dividido em inventário inteligente, central de operações e cidade preditiva. A base contém endpoint técnico de saúde, autenticação fundacional, API protegida para cadastro, consulta, filtros, atualização e contagens agregadas de equipamentos, além de interface web de inventário/login com mapa dos equipamentos persistidos georreferenciados. A métrica de manutenção abre uma fila dos equipamentos explicitamente marcados, filtrável pelo inventário. Cadastro de agentes e predição ainda não foram implementados. As decisões e pendências estão em [docs/arquitetura.md](docs/arquitetura.md).
 
-**Etapa atual (24/10):** núcleo da Fase 2 e fluxo principal da Fase 3 implementados, incluindo mapa geográfico e fila filtrável de manutenção. Falta validar o fluxo conectado a PostgreSQL e provisionar o primeiro usuário por procedimento seguro.
+**Etapa atual (24/10):** núcleo do inventário e fluxo principal da central (mapa e fila filtrável de manutenção) implementados. A stack local Docker Compose e a aplicação de migrations na inicialização também foram adicionadas, ainda sem validação em runtime. Faltam provisionar o primeiro usuário com segurança e validar a integração real com PostgreSQL.
 
-Os SDKs foram preparados em diretório local de usuário (fora do repositório): .NET SDK 10.0.402 e Node.js 24.20.0/npm 11.19.0. Os pacotes foram baixados de fontes oficiais e seus hashes conferidos. Para compilar no PowerShell desta máquina, foi necessário adicionar `FogoTools\dotnet` e `FogoTools\node-v24.20.0-win-x64` ao PATH da sessão; npm foi chamado via `npm.cmd` devido à política local que bloqueia scripts `.ps1`. PostgreSQL, Docker e `psql` não estão instalados; a fatia atual não depende deles.
+Os SDKs foram preparados em diretório local de usuário (fora do repositório): .NET SDK 10.0.402 e Node.js 24.20.0/npm 11.19.0. Os pacotes foram baixados de fontes oficiais e seus hashes conferidos. Para compilar no PowerShell desta máquina, foi necessário adicionar `FogoTools\dotnet` e `FogoTools\node-v24.20.0-win-x64` ao PATH da sessão; npm foi chamado via `npm.cmd` devido à política local que bloqueia scripts `.ps1`. PostgreSQL, Docker e `psql` não estão instalados nesta máquina; a stack Compose está definida, mas não pôde ser executada aqui.
 
 No desenvolvimento, o Vite encaminha `/api` para `https://localhost:7001`. Se o perfil local da API usar outra porta, defina `FOGO_API_URL` antes de iniciar o frontend. O navegador precisa confiar no certificado HTTPS de desenvolvimento da API.
 
@@ -22,6 +22,14 @@ No desenvolvimento, o Vite encaminha `/api` para `https://localhost:7001`. Se o 
 
 No backend, o inventário está organizado em Controllers (HTTP), Application (validação e casos de uso), Repositories (consultas/persistência) e Identity (autenticação e `DbContext`). As migrations EF seguem no projeto da API e permanecem como fonte oficial do esquema.
 
+## Stack local com Docker Compose
+
+Com Docker Desktop/Engine e Docker Compose instalados, copie `.env.example` para `.env` e substitua `POSTGRES_PASSWORD` por um segredo aleatório URL-safe e `FOGO_JWT_KEY` por uma chave aleatória com pelo menos 32 bytes. Não compartilhe nem versione `.env`. Na raiz do projeto, execute `docker compose up --build` e abra `http://localhost:8080`.
+
+O Compose inicia PostgreSQL, API e frontend; somente o frontend é publicado na porta local 8080. O Nginx encaminha `/api` à API pela rede privada do Compose. O volume `dados_postgres` preserva os dados entre reinicializações. A API aguarda o healthcheck do banco e aplica as migrations EF ao iniciar. Isso cria/atualiza o esquema, mas **não** insere equipamentos de demonstração nem cria o primeiro usuário. O provisionamento seguro desse usuário permanece pendente.
+
+`docker compose down` para a stack sem apagar o volume. `docker compose down -v` também remove o banco persistido e é destrutivo. Esta configuração é para execução local; publicação exige HTTPS no proxy de borda e gestão de segredos própria, não o arquivo `.env`.
+
 ## Configuração local da API
 
 Defina `FOGO_JWT_KEY` com pelo menos 32 bytes aleatórios usando um gerenciador de segredos ou variável de ambiente; nunca versione o valor. Configure `ConnectionStrings__PostgreSQL` com uma base PostgreSQL criada para este ambiente e, opcionalmente, `FOGO_ORIGINS` como lista de origens separadas por ponto e vírgula. Em desenvolvimento HTTP local, `FOGO_HTTPS_DEV=true` ativa cookies Secure; prefira HTTPS. A API falha ao iniciar se a chave ou conexão não estiver configurada.
@@ -32,10 +40,12 @@ Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o 
 
 ## Próximas etapas
 
-1. Provisionar PostgreSQL e aplicar migrations somente a uma base alvo revisada; nunca resetar bancos existentes.
-2. Implementar provisionamento administrativo seguro e validar sessões e operações com PostgreSQL.
-3. Validar mapa, fila de manutenção e inventário integrados com dados persistidos; a API limita o mapa a 500 pontos por padrão e 1.000 no máximo por consulta.
-4. Avaliar cadastro de agentes, atualização em tempo real, integrações e predição conforme dados, autorização e prazo.
+1. Executar e validar a stack Compose com Docker; as migrations são aplicadas na inicialização e não criam registros de domínio nem contas.
+2. Implementar provisionamento seguro do primeiro usuário e validar sessões, migrations e CRUD contra PostgreSQL.
+3. Validar mapa, fila de manutenção e inventário de ponta a ponta; implementar cadastro de agentes se confirmado no escopo. O mapa limita consultas a 500 pontos por padrão e 1.000 no máximo.
+4. Definir contratos e autorização de eventos antes de implementar atualizações em tempo real com SignalR.
+5. Avaliar fontes autorizadas e disponibilidade de histórico antes de integrações ou predição.
+6. Fechar a entrega: revisão de segurança, instruções em clone limpo, validação do pacote e demonstração sem dados fictícios apresentados como reais.
 
 ## Validação executada
 
@@ -46,6 +56,7 @@ Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o 
 - `npm install` em `frontend/`: passou, 0 vulnerabilidades reportadas.
 - `npm run build` em `frontend/`: passou (TypeScript e Vite).
 - `npm audit` em `frontend/`: nenhum pacote vulnerável reportado.
+- Docker Compose: arquivos de build e stack adicionados; execução ainda não validada porque Docker não está instalado neste ambiente.
 - `frontend/`: mapa Leaflet construído para exibir localizações retornadas pela API; tiles OpenStreetMap exigem internet e a experiência visual integrada ainda precisa de validação com uma sessão e banco reais.
 - Auditoria NuGet dos projetos API e testes: nenhum pacote vulnerável reportado.
 - PostgreSQL continua indisponível neste ambiente; migrations e `CREATE.sql` não foram aplicados nem validados em instância real.

@@ -4,6 +4,7 @@ using Fogo.Api;
 using Fogo.Api.Application.Inventario;
 using Fogo.Api.Identity;
 using Fogo.Api.Repositories;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,10 +31,18 @@ builder.Services.AddScoped<EquipamentoService>();
 
 var app = builder.Build();
 
-if (!app.Environment.IsEnvironment("Testing"))
+if (builder.Configuration.GetValue("FOGO_HTTPS_REDIRECIONAR", !app.Environment.IsEnvironment("Testing")))
 {
     app.UseHttpsRedirection();
 }
+
+if (builder.Configuration.GetValue<bool>("FOGO_APLICAR_MIGRATIONS"))
+{
+    await using var escopo = app.Services.CreateAsyncScope();
+    var banco = escopo.ServiceProvider.GetRequiredService<FogoDbContext>();
+    await banco.Database.MigrateAsync();
+}
+
 app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();

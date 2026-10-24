@@ -1,0 +1,46 @@
+services:
+  banco:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fogo}
+      POSTGRES_USER: ${POSTGRES_USER:-fogo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+    volumes:
+      - dados_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Fogo.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__PostgreSQL: "Host=banco;Port=5432;Database=${POSTGRES_DB:-fogo};Username=${POSTGRES_USER:-fogo};Password=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}"
+      FOGO_JWT_KEY: ${FOGO_JWT_KEY:?Defina FOGO_JWT_KEY no arquivo .env}
+      FOGO_ORIGINS: ${FOGO_ORIGINS:-http://localhost:8080}
+      FOGO_APLICAR_MIGRATIONS: "true"
+      FOGO_HTTPS_REDIRECIONAR: "false"
+    depends_on:
+      banco:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  dados_postgres:
