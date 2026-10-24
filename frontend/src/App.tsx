@@ -1,5 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import MapaEquipamentos, { LocalizacaoEquipamento } from './MapaEquipamentos';
 import './App.css';
+import './Visoes.css';
 
 type SituacaoEquipamento = 'aindaNaoInstalado' | 'operacional' | 'mauFuncionamento' | 'emManutencao' | 'desativado' | 'furtado';
 type TipoManutencao = 'imediata' | 'agendada' | 'periodica';
@@ -34,6 +36,7 @@ type Indicadores = { totalCadastrado: number; porSituacao: { situacao: SituacaoE
 type RespostaToken = { tokenAcesso: string; expiraEm: string };
 
 type Filtros = { tipo: string; situacao: string; bairro: string };
+type RespostaMapa = { totalComCoordenadas: number; limite: number; resultadoTruncado: boolean; itens: LocalizacaoEquipamento[] };
 
 const estados: { valor: SituacaoEquipamento; rotulo: string }[] = [
   { valor: 'aindaNaoInstalado', rotulo: 'Ainda não instalado' },
@@ -61,6 +64,9 @@ function App() {
   const [token, setToken] = useState<string | null>(null);
   const [itens, setItens] = useState<Equipamento[]>([]);
   const [indicadores, setIndicadores] = useState<Indicadores | null>(null);
+  const [mapa, setMapa] = useState<RespostaMapa | null>(null);
+  const [carregandoMapa, setCarregandoMapa] = useState(false);
+  const [visao, setVisao] = useState<'inventario' | 'mapa'>('inventario');
   const [pagina, setPagina] = useState(1);
   const [total, setTotal] = useState(0);
   const [filtros, setFiltros] = useState<Filtros>(vazioFiltros);
@@ -113,7 +119,25 @@ function App() {
     }
   }, [chamarApi, pagina, pesquisa, token]);
 
+  const carregarMapa = useCallback(async (limite = 500) => {
+    if (!token) return;
+    setCarregandoMapa(true);
+    setErro('');
+    try {
+      const resposta = await chamarApi(`/api/equipamentos/localizacoes?limite=${limite}`);
+      setMapa(await resposta.json() as RespostaMapa);
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar as localizações.');
+    } finally {
+      setCarregandoMapa(false);
+    }
+  }, [chamarApi, token]);
+
   useEffect(() => { void carregarDados(); }, [carregarDados]);
+
+  useEffect(() => {
+    if (visao === 'mapa' && token) void carregarMapa();
+  }, [carregarMapa, token, visao]);
 
   useEffect(() => {
     let cancelado = false;
@@ -272,7 +296,12 @@ function App() {
             <article className="metric-card"><span className="metric-label">NECESSITAM MANUTENÇÃO</span><strong>{indicadores?.necessitamManutencao ?? '—'}</strong><small>conforme cadastro</small></article>
           </div>
 
-          <section className="inventory-panel" aria-labelledby="inventory-title">
+          <nav className="view-tabs" aria-label="Visões do inventário">
+            <button type="button" aria-pressed={visao === 'inventario'} className={visao === 'inventario' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('inventario')}>Lista de equipamentos</button>
+            <button type="button" aria-pressed={visao === 'mapa'} className={visao === 'mapa' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('mapa')}>Mapa operacional</button>
+          </nav>
+
+          {visao === 'inventario' ? <section className="inventory-panel" aria-labelledby="inventory-title">
             <div className="panel-heading">
               <div><p className="eyebrow">BASE DE ATIVOS</p><h2 id="inventory-title">Equipamentos <span>({total})</span></h2></div>
               <button className="button button-quiet refresh-button" onClick={() => void carregarDados()} disabled={carregando}>↻ Atualizar</button>
@@ -299,7 +328,25 @@ function App() {
               ))}</tbody></table></div>
             )}
             <div className="pagination"><span>{total ? `${(pagina - 1) * 25 + 1}–${Math.min(pagina * 25, total)} de ${total}` : '0 registros'}</span><div><button className="button button-quiet" disabled={pagina <= 1 || carregando} onClick={() => setPagina((atual) => atual - 1)}>← Anterior</button><span>Página {pagina}</span><button className="button button-quiet" disabled={pagina * 25 >= total || carregando} onClick={() => setPagina((atual) => atual + 1)}>Próxima →</button></div></div>
-          </section>
+          </section> : <section className="painel-mapa" aria-labelledby="mapa-title">
+            <div className="mapa-cabecalho">
+              <div>
+                <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA</p>
+                <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} com coordenadas)</span></h2>
+                <p className="mapa-descricao">Exibe registros persistidos que possuem latitude e longitude. Selecione um marcador para consultar os detalhes.</p>
+              </div>
+              <button className="button button-quiet" onClick={() => void carregarMapa()} disabled={carregandoMapa}>↻ Atualizar mapa</button>
+            </div>
+            {mapa?.resultadoTruncado && <div className="mapa-alerta" role="status">
+              <span>Exibindo {mapa.itens.length} de {mapa.totalComCoordenadas} equipamentos com coordenadas.</span>
+              {mapa.limite < 1000
+                ? <button className="button button-secondary" onClick={() => void carregarMapa(1000)} disabled={carregandoMapa}>Carregar até 1.000 pontos</button>
+                : <span>O limite máximo desta consulta foi atingido.</span>}
+            </div>}
+            {carregandoMapa ? <div className="mapa-vazio"><strong>Carregando localizações…</strong><span>Consultando registros persistidos.</span></div> : mapa?.itens.length ? <MapaEquipamentos equipamentos={mapa.itens} /> : (
+              <div className="mapa-vazio"><strong>Nenhuma localização cadastrada</strong><span>O mapa mostra somente equipamentos persistidos que tenham latitude e longitude; nenhum marcador demonstrativo foi criado.</span></div>
+            )}
+          </section>}
         </section>
       )}
 

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Fogo.Api;
 using Fogo.Api.Application.Inventario;
 using Fogo.Api.Identity;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Fogo.Tests;
@@ -172,7 +174,17 @@ public sealed class InventarioTests : IClassFixture<ConfiguracaoFogoWebApplicati
 
         Assert.Contains("api/equipamentos", rotas);
         Assert.Contains("api/equipamentos/{id:guid}", rotas);
+        Assert.Contains("api/equipamentos/localizacoes", rotas);
         Assert.Contains("api/indicadores/equipamentos", rotas);
+    }
+
+    [Fact]
+    public void ControllersMvc_SerializamEnumsEmCamelCase()
+    {
+        var opcoes = _fabrica.Services.GetRequiredService<IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>>();
+        var serializado = JsonSerializer.Serialize(SituacaoEquipamento.Operacional, opcoes.Value.JsonSerializerOptions);
+
+        Assert.Equal("\"operacional\"", serializado);
     }
 
     [Fact]
@@ -203,6 +215,14 @@ public sealed class InventarioTests : IClassFixture<ConfiguracaoFogoWebApplicati
     public async Task Indicadores_SemBearer_RecusaAcesso()
     {
         var resposta = await _cliente.GetAsync("/api/indicadores/equipamentos");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task Localizacoes_SemBearer_RecusaAcesso()
+    {
+        var resposta = await _cliente.GetAsync("/api/equipamentos/localizacoes");
 
         Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
     }

@@ -49,6 +49,22 @@ public sealed class EquipamentosController(EquipamentoService service) : Control
         return equipamento is null ? NotFound() : Ok(equipamento);
     }
 
+    [HttpGet("localizacoes")]
+    public async Task<ActionResult<MapaEquipamentosResposta>> ListarLocalizacoesAsync(
+        [FromQuery] int limite = 500,
+        CancellationToken cancelamento = default)
+    {
+        if (limite is < 1 or > 1000)
+        {
+            return ValidationProblem(ModelStateFrom(new Dictionary<string, string[]>
+            {
+                ["limite"] = ["O limite deve estar entre 1 e 1000."]
+            }));
+        }
+
+        return Ok(await service.ListarLocalizacoesAsync(limite, cancelamento));
+    }
+
     [HttpPost]
     public async Task<ActionResult<EquipamentoResposta>> CriarAsync(
         [FromBody] EquipamentoRequisicao requisicao,

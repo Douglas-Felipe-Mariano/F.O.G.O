@@ -22,6 +22,26 @@ public sealed class EquipamentoService(
         return equipamento is null ? null : EquipamentoResposta.De(equipamento);
     }
 
+    public async Task<MapaEquipamentosResposta> ListarLocalizacoesAsync(int limite, CancellationToken cancelamento)
+    {
+        var total = await repositorio.ContarComCoordenadasAsync(cancelamento);
+        var equipamentos = await repositorio.ListarComCoordenadasAsync(limite, cancelamento);
+        var localizacoes = equipamentos.Select(equipamento => new LocalizacaoEquipamentoResposta(
+            equipamento.Id,
+            equipamento.Tipo,
+            equipamento.NumeroSerie,
+            equipamento.Bairro,
+            equipamento.Cidade,
+            equipamento.Uf,
+            equipamento.Rua,
+            equipamento.Referencia,
+            equipamento.Latitude!.Value,
+            equipamento.Longitude!.Value,
+            equipamento.Situacao)).ToArray();
+
+        return new MapaEquipamentosResposta(total, limite, total > localizacoes.Length, localizacoes);
+    }
+
     public async Task<IndicadoresEquipamentosResposta> ConsultarIndicadoresAsync(CancellationToken cancelamento)
     {
         var porSituacao = await repositorio.ContarPorSituacaoAsync(cancelamento);
@@ -73,13 +93,13 @@ public sealed class EquipamentoService(
     {
         var equipamento = new Equipamento
         {
-            Tipo = string.Empty,
-            NumeroSerie = string.Empty,
-            Cep = string.Empty,
-            Bairro = string.Empty,
-            Cidade = string.Empty,
-            Uf = string.Empty,
-            Rua = string.Empty,
+            Tipo = requisicao.Tipo.Trim(),
+            NumeroSerie = requisicao.NumeroSerie.Trim(),
+            Cep = requisicao.Cep.Trim(),
+            Bairro = requisicao.Bairro.Trim(),
+            Cidade = requisicao.Cidade.Trim(),
+            Uf = requisicao.Uf.Trim().ToUpperInvariant(),
+            Rua = requisicao.Rua.Trim(),
             CriadoEm = agora,
             AtualizadoEm = agora
         };

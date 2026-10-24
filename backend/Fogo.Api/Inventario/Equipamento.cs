@@ -121,3 +121,22 @@ public sealed record PaginaEquipamentosResposta(
     IReadOnlyCollection<EquipamentoResposta> Itens);
 
 public sealed record ContagemSituacao(SituacaoEquipamento Situacao, int Quantidade);
+
+public sealed record LocalizacaoEquipamentoResposta(
+    Guid Id,
+    string Tipo,
+    string NumeroSerie,
+    string Bairro,
+    string Cidade,
+    string Uf,
+    string Rua,
+    string? Referencia,
+    decimal Latitude,
+    decimal Longitude,
+    SituacaoEquipamento Situacao);
+
+public sealed record MapaEquipamentosResposta(
+    int TotalComCoordenadas,
+    int Limite,
+    bool ResultadoTruncado,
+    IReadOnlyCollection<LocalizacaoEquipamentoResposta> Itens);

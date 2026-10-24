@@ -15,6 +15,8 @@ public interface IEquipamentoRepository
     Task<IReadOnlyCollection<Equipamento>> ListarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento);
     Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento);
     Task<Equipamento?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento);
+    Task<int> ContarComCoordenadasAsync(CancellationToken cancelamento);
+    Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(int limite, CancellationToken cancelamento);
     Task<IReadOnlyCollection<ContagemSituacao>> ContarPorSituacaoAsync(CancellationToken cancelamento);
     Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento);
     Task AdicionarAsync(Equipamento equipamento, CancellationToken cancelamento);

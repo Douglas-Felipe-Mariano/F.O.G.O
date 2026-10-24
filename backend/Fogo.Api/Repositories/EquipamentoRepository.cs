@@ -29,6 +29,19 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
     public Task<Equipamento?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento) =>
         banco.Equipamentos.SingleOrDefaultAsync(item => item.Id == id, cancelamento);
 
+    public Task<int> ContarComCoordenadasAsync(CancellationToken cancelamento) =>
+        banco.Equipamentos.AsNoTracking()
+            .CountAsync(item => item.Latitude != null && item.Longitude != null, cancelamento);
+
+    public async Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(
+        int limite,
+        CancellationToken cancelamento) =>
+        await banco.Equipamentos.AsNoTracking()
+            .Where(item => item.Latitude != null && item.Longitude != null)
+            .OrderBy(item => item.Id)
+            .Take(limite)
+            .ToArrayAsync(cancelamento);
+
     public async Task<IReadOnlyCollection<ContagemSituacao>> ContarPorSituacaoAsync(CancellationToken cancelamento) =>
         await banco.Equipamentos.AsNoTracking()
             .GroupBy(item => item.Situacao)
