@@ -228,6 +228,14 @@ public sealed class InventarioTests : IClassFixture<ConfiguracaoFogoWebApplicati
     }
 
     [Fact]
+    public async Task HubEquipamentos_SemBearer_RecusaNegociacao()
+    {
+        var resposta = await _cliente.PostAsync("/hubs/equipamentos/negotiate?negotiateVersion=1", content: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
+    [Fact]
     public async Task Criar_SemBearer_RecusaAcesso()
     {
         var resposta = await _cliente.PostAsJsonAsync("/api/equipamentos", CriarRequisicaoValida());

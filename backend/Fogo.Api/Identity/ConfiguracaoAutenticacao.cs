@@ -79,6 +79,20 @@ public static class ConfiguracaoAutenticacao
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromSeconds(30)
                 };
+                opcoes.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = contexto =>
+                    {
+                        var tokenAcesso = contexto.Request.Query["access_token"];
+                        if (!string.IsNullOrEmpty(tokenAcesso)
+                            && contexto.HttpContext.Request.Path.StartsWithSegments("/hubs/equipamentos"))
+                        {
+                            contexto.Token = tokenAcesso;
+                        }
+
+                        return Task.CompletedTask;
+                    }
+                };
             });
         builder.Services.AddAuthorization();
         builder.Services.AddScoped<ServicoTokens>();

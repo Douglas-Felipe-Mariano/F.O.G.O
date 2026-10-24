@@ -9,7 +9,9 @@ namespace Fogo.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/equipamentos")]
-public sealed class EquipamentosController(EquipamentoService service) : ControllerBase
+public sealed class EquipamentosController(
+    EquipamentoService service,
+    PublicadorEventosEquipamentos publicadorEventos) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PaginaEquipamentosResposta>> ListarAsync(
@@ -93,6 +95,11 @@ public sealed class EquipamentosController(EquipamentoService service) : Control
         }
 
         var equipamento = resultado.Valor!;
+        await publicadorEventos.PublicarAlteracaoAsync(
+            equipamento.Id,
+            "criado",
+            equipamento.AtualizadoEm,
+            CancellationToken.None);
         return CreatedAtAction(nameof(ConsultarAsync), new { id = equipamento.Id }, equipamento);
     }
 
@@ -115,7 +122,14 @@ public sealed class EquipamentosController(EquipamentoService service) : Control
                 : Problem(statusCode: 500);
         }
 
-        return Ok(resultado.Valor);
+        var equipamentoAtualizado = resultado.Valor!;
+        await publicadorEventos.PublicarAlteracaoAsync(
+            equipamentoAtualizado.Id,
+            "atualizado",
+            equipamentoAtualizado.AtualizadoEm,
+            CancellationToken.None);
+
+        return Ok(equipamentoAtualizado);
     }
 
     private static Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary ModelStateFrom(

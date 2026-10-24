@@ -47,9 +47,11 @@ builder.Services.AddControllers().AddJsonOptions(opcoes =>
         new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
     opcoes.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
+builder.Services.AddSignalR();
 builder.Services.AddScoped<IEquipamentoRepository, EquipamentoRepository>();
 builder.Services.AddScoped<EquipamentoService>();
 builder.Services.AddScoped<ProvisionadorPrimeiroUsuario>();
+builder.Services.AddScoped<PublicadorEventosEquipamentos>();
 
 var app = builder.Build();
 
@@ -96,6 +98,7 @@ app.MapGet("/api/autenticacao/eu", (System.Security.Claims.ClaimsPrincipal usuar
 
 app.MapearAutenticacao();
 app.MapControllers();
+app.MapHub<EquipamentosHub>("/hubs/equipamentos").RequireAuthorization();
 
 app.Run();
 

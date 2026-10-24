@@ -1,4 +1,5 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { HubConnectionBuilder } from '@microsoft/signalr';
 import MapaEquipamentos, { LocalizacaoEquipamento } from './MapaEquipamentos';
 import './App.css';
 import './Visoes.css';
@@ -35,6 +36,7 @@ type EquipamentoRequisicao = Omit<Equipamento, 'id' | 'criadoEm' | 'atualizadoEm
 type PaginaEquipamentos = { pagina: number; tamanhoPagina: number; totalRegistros: number; itens: Equipamento[] };
 type Indicadores = { totalCadastrado: number; porSituacao: { situacao: SituacaoEquipamento; quantidade: number }[]; necessitamManutencao: number };
 type RespostaToken = { tokenAcesso: string; expiraEm: string };
+type EventoEquipamentoAlterado = { equipamentoId: string; operacao: 'criado' | 'atualizado'; atualizadoEm: string };
 
 type Filtros = { tipo: string; situacao: string; bairro: string };
 type RespostaMapa = { totalComCoordenadas: number; limite: number; resultadoTruncado: boolean; itens: LocalizacaoEquipamento[] };
@@ -67,6 +69,7 @@ function App() {
   const [indicadores, setIndicadores] = useState<Indicadores | null>(null);
   const [mapa, setMapa] = useState<RespostaMapa | null>(null);
   const [carregandoMapa, setCarregandoMapa] = useState(false);
+  const [statusTempoReal, setStatusTempoReal] = useState<'conectando' | 'conectado' | 'reconectando' | 'desconectado'>('desconectado');
   const [visao, setVisao] = useState<'inventario' | 'mapa'>('inventario');
   const [pagina, setPagina] = useState(1);
   const [total, setTotal] = useState(0);
@@ -143,11 +146,59 @@ function App() {
     }
   }, [chamarApi, pesquisaMapa, token]);
 
+  const atualizacaoTempoReal = useRef({ carregarDados, carregarMapa, visao });
+  useEffect(() => {
+    atualizacaoTempoReal.current = { carregarDados, carregarMapa, visao };
+  }, [carregarDados, carregarMapa, visao]);
+
   useEffect(() => { void carregarDados(); }, [carregarDados]);
 
   useEffect(() => {
     if (visao === 'mapa' && token) void carregarMapa();
   }, [carregarMapa, token, visao]);
+
+  useEffect(() => {
+    if (!token) {
+      setStatusTempoReal('desconectado');
+      return;
+    }
+
+    let cancelado = false;
+    const conexao = new HubConnectionBuilder()
+      .withUrl('/hubs/equipamentos', { accessTokenFactory: () => token })
+      .withAutomaticReconnect()
+      .build();
+    const atualizarDados = () => {
+      void atualizacaoTempoReal.current.carregarDados();
+      if (atualizacaoTempoReal.current.visao === 'mapa') {
+        void atualizacaoTempoReal.current.carregarMapa();
+      }
+    };
+
+    conexao.on('equipamentoAlterado', (_evento: EventoEquipamentoAlterado) => {
+      if (cancelado) return;
+      atualizarDados();
+      setMensagem('Dados atualizados em tempo real.');
+    });
+    conexao.onreconnecting(() => { if (!cancelado) setStatusTempoReal('reconectando'); });
+    conexao.onreconnected(() => {
+      if (!cancelado) {
+        setStatusTempoReal('conectado');
+        atualizarDados();
+      }
+    });
+    conexao.onclose(() => { if (!cancelado) setStatusTempoReal('desconectado'); });
+
+    setStatusTempoReal('conectando');
+    void conexao.start()
+      .then(() => { if (!cancelado) setStatusTempoReal('conectado'); })
+      .catch(() => { if (!cancelado) setStatusTempoReal('desconectado'); });
+
+    return () => {
+      cancelado = true;
+      void conexao.stop();
+    };
+  }, [token]);
 
   useEffect(() => {
     let cancelado = false;
@@ -379,7 +430,7 @@ function App() {
         </section>
       )}
 
-      <footer className="footer"><span>F.O.G.O. <span className="muted">/</span> FERRAMENTA ONISCIENTE DE GESTÃO E OPERAÇÕES</span><span className="footer-right"><i /> DADOS VINCULADOS À API</span></footer>
+      <footer className="footer"><span>F.O.G.O. <span className="muted">/</span> FERRAMENTA ONISCIENTE DE GESTÃO E OPERAÇÕES</span><span className="footer-right"><i /> DADOS VINCULADOS À API{token && ` · TEMPO REAL ${statusTempoReal.toUpperCase()}`}</span></footer>
 
       {modalAberto && <div className="modal-backdrop" role="presentation" onMouseDown={(evento) => { if (evento.target === evento.currentTarget) setModalAberto(false); }}>
         <section className="equipment-modal" role="dialog" aria-modal="true" aria-labelledby="equipment-modal-title">
