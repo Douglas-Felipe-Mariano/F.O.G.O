@@ -26,7 +26,9 @@ No backend, o inventário está organizado em Controllers (HTTP), Application (v
 
 Com Docker Desktop/Engine e Docker Compose instalados, copie `.env.example` para `.env` e substitua `POSTGRES_PASSWORD` por um segredo aleatório URL-safe e `FOGO_JWT_KEY` por uma chave aleatória com pelo menos 32 bytes. Não compartilhe nem versione `.env`. Na raiz do projeto, execute `docker compose up --build` e abra `http://localhost:8080`.
 
-O Compose inicia PostgreSQL, API e frontend; somente o frontend é publicado na porta local 8080. O Nginx encaminha `/api` à API pela rede privada do Compose. O volume `dados_postgres` preserva os dados entre reinicializações. A API aguarda o healthcheck do banco e aplica as migrations EF ao iniciar. Isso cria/atualiza o esquema, mas **não** insere equipamentos de demonstração nem cria o primeiro usuário. O provisionamento seguro desse usuário permanece pendente.
+O Compose inicia PostgreSQL, API e frontend; somente o frontend é publicado na porta local 8080. O Nginx encaminha `/api` à API pela rede privada do Compose. O volume `dados_postgres` preserva os dados entre reinicializações. A API aguarda o healthcheck do banco, aplica as migrations EF ao iniciar e expõe um healthcheck para que o frontend espere sua prontidão. Isso cria/atualiza o esquema, mas **não** insere equipamentos de demonstração nem cria usuários automaticamente.
+
+Depois que a stack estiver pronta, crie a primeira conta de forma interativa com `docker compose exec -it api dotnet Fogo.Api.dll --provisionar-primeiro-usuario`. O comando pede e-mail e senha com confirmação; a senha não é exibida nem deve ser colocada em argumentos, `.env` ou logs. Só é permitido quando ainda não há usuários e não existem migrations pendentes. O e-mail é confirmado por esse procedimento local. A aplicação ainda não implementa papéis ou permissões diferenciadas entre usuários autenticados.
 
 `docker compose down` para a stack sem apagar o volume. `docker compose down -v` também remove o banco persistido e é destrutivo. Esta configuração é para execução local; publicação exige HTTPS no proxy de borda e gestão de segredos própria, não o arquivo `.env`.
 
@@ -34,14 +36,14 @@ O Compose inicia PostgreSQL, API e frontend; somente o frontend é publicado na 
 
 Defina `FOGO_JWT_KEY` com pelo menos 32 bytes aleatórios usando um gerenciador de segredos ou variável de ambiente; nunca versione o valor. Configure `ConnectionStrings__PostgreSQL` com uma base PostgreSQL criada para este ambiente e, opcionalmente, `FOGO_ORIGINS` como lista de origens separadas por ponto e vírgula. Em desenvolvimento HTTP local, `FOGO_HTTPS_DEV=true` ativa cookies Secure; prefira HTTPS. A API falha ao iniciar se a chave ou conexão não estiver configurada.
 
-O login não está aberto para cadastro público. Ainda falta implementar/documentar provisionamento administrativo seguro; não há usuário nem senha padrão.
+O login não está aberto para cadastro público. O primeiro usuário deve ser criado pelo comando interativo documentado na seção Docker Compose; não há usuário nem senha padrão. Como a matriz de permissões continua pendente, essa conta não recebe um papel de autorização diferenciado.
 
 Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o portal em `http://localhost:5173`; o navegador solicita o cookie CSRF ao backend e a API é acessada pelo proxy Vite. Sem um usuário provisionado em banco, não será possível entrar ainda.
 
 ## Próximas etapas
 
 1. Executar e validar a stack Compose com Docker; as migrations são aplicadas na inicialização e não criam registros de domínio nem contas.
-2. Implementar provisionamento seguro do primeiro usuário e validar sessões, migrations e CRUD contra PostgreSQL.
+2. Executar o comando de provisionamento seguro e validar sessões, migrations e CRUD contra PostgreSQL real.
 3. Validar mapa, fila de manutenção e inventário de ponta a ponta; implementar cadastro de agentes se confirmado no escopo. O mapa limita consultas a 500 pontos por padrão e 1.000 no máximo.
 4. Definir contratos e autorização de eventos antes de implementar atualizações em tempo real com SignalR.
 5. Avaliar fontes autorizadas e disponibilidade de histórico antes de integrações ou predição.

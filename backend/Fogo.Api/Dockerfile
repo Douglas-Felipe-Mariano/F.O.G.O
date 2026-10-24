@@ -17,5 +17,6 @@ COPY --from=build /app/publish .
 
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 CMD ["dotnet", "Fogo.Api.dll", "--healthcheck"]
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Fogo.Api.dll"]

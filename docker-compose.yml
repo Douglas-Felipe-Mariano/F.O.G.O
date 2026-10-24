@@ -31,6 +31,12 @@ services:
       banco:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "dotnet", "Fogo.Api.dll", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   frontend:
     build:
@@ -39,7 +45,8 @@ services:
     ports:
       - "127.0.0.1:8080:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

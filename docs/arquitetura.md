@@ -16,7 +16,7 @@ Este documento registra decisões já confirmadas pelo responsável do projeto. 
 - Street View: integração com Google Street View somente com configuração e avaliação de custos aplicáveis.
 - API: Swagger/OpenAPI.
 - Execução local: Docker Compose se for compatível com o ambiente e útil ao projeto.
-- Stack local: Docker Compose com PostgreSQL persistente, API ASP.NET, frontend servido por Nginx e migrations EF aplicadas na inicialização quando `FOGO_APLICAR_MIGRATIONS=true`; o Compose não cria equipamento de demonstração nem usuário padrão.
+- Stack local: Docker Compose com PostgreSQL persistente, API ASP.NET, frontend servido por Nginx e migrations EF aplicadas na inicialização quando `FOGO_APLICAR_MIGRATIONS=true`; healthchecks ordenam a prontidão do banco, API e frontend. O Compose não cria equipamento de demonstração nem usuário padrão.
 - Organização: monólito modular, proporcional ao MVP; sem microserviços ou abstrações não justificadas.
 - Organização interna atual: controllers recebem HTTP e delegam para Application Services; repositories encapsulam consultas EF Core; `FogoDbContext` mantém persistência/configuração; contratos e entidades do inventário ficam em `Inventario`. Autenticação permanece em handlers minimalistas até uma refatoração específica justificar controllers próprios.
 
@@ -39,7 +39,7 @@ Não haverá cadastro público irrestrito nem credenciais padrão versionadas. O
 - Implementado como base: ASP.NET Core Identity com tabelas mapeadas em português, JWT de acesso com emissor/audiência/assinatura/validade verificados, refresh token aleatório persistido somente como hash e rotacionado/revogado, cookies `HttpOnly`, `SameSite=Strict`, CSRF double-submit também no login, rate limit e fallback de autorização que exige usuário autenticado.
 - Configuração obrigatória: `FOGO_JWT_KEY` (mínimo de 32 bytes) e `ConnectionStrings__PostgreSQL`; `FOGO_ORIGINS` é opcional. `FOGO_HTTPS_DEV=true` habilita cookies Secure em desenvolvimento HTTP. Segredos não devem ser versionados.
 - Ainda não validado contra PostgreSQL real: migration/aplicação, persistência, rotação e revogação ponta a ponta. Os testes atuais cobrem rotas HTTP básicas e recusas, não um fluxo de sessão bem-sucedido. Esta base não equivale a auditoria de segurança.
-- O primeiro administrador segue pendente; não existe cadastro público nem credencial padrão. A matriz de permissões continua pendente de confirmação.
+- O primeiro usuário é criado apenas pelo comando interativo `--provisionar-primeiro-usuario`, que exige banco migrado, confirma senha sem echo, serializa tentativas com advisory lock PostgreSQL e recusa a operação se já existir qualquer usuário; e-mail é confirmado pelo procedimento local. Não existe cadastro público nem credencial padrão. O comando ainda não atribui papel: a matriz de permissões continua pendente de confirmação.
 - A migration inicial do Identity e das sessões está em `backend/Fogo.Api/Identity/Migrations`; foi gerada sem conexão ao banco e não foi aplicada. Testes de rotação, replay, revogação e persistência com PostgreSQL permanecem necessários.
 
 ## Dados, mapa e integrações
@@ -54,8 +54,8 @@ Previsões dependem de análise dos dados disponíveis e de aprovação da abord
 
 ## Implementação por etapas
 
-1. SDKs .NET 10 e Node.js 24/npm 11 estão preparados fora do repositório; arquivos Compose existem, mas Docker/PostgreSQL ainda precisam ser instalados e a stack validada em runtime.
-2. Completar a autenticação: provisionar com segurança o primeiro usuário e testar migrations, login, refresh, revogação e CRUD contra PostgreSQL real.
+1. SDKs .NET 10 e Node.js 24/npm 11 estão preparados fora do repositório; arquivos Compose existem, mas Docker/PostgreSQL ainda precisam ser instalados e a stack validada em runtime. O comando de provisionamento interativo foi implementado, porém depende dessa validação com banco real.
+2. Testar migrations, provisionamento, login, refresh, revogação e CRUD contra PostgreSQL real.
 3. Validar o fluxo integrado de inventário, mapa e fila de manutenção com dados persistidos; decidir e implementar cadastro de agentes conforme o escopo aprovado.
 4. Definir contratos e autorização do hub antes de implementar eventos SignalR após persistência de alterações reais.
 5. Avaliar autorização/licença/fontes e histórico antes de integrações externas ou previsão.
@@ -71,4 +71,4 @@ Previsões dependem de análise dos dados disponíveis e de aprovação da abord
 
 ## Validação registrada
 
-Validação atual: 27 testes passaram; builds da API e frontend passaram; `npm audit` não reportou vulnerabilidades. A suíte cobre autorização, descoberta dos Controllers, serialização camelCase, validações, bootstrap CSRF, modelo EF sem conexão e encaminhamento dos filtros do mapa e da fila de manutenção em teste unitário, mas não é substituta da integração PostgreSQL nem cobre sessão/CRUD bem-sucedidos. PostgreSQL não está instalado; migrations e `CREATE.sql` não foram aplicados a banco real. O mapa compila, porém seu render integrado e consumo de tiles não foram verificados no navegador com sessão autenticada.
+Validação atual: 27 testes passaram; builds da API e frontend passaram; `npm audit` não reportou vulnerabilidades. A suíte cobre autorização, descoberta dos Controllers, serialização camelCase, validações, bootstrap CSRF, modelo EF sem conexão e encaminhamento dos filtros do mapa e da fila de manutenção em teste unitário, mas não é substituta da integração PostgreSQL nem cobre sessão/CRUD bem-sucedidos. PostgreSQL e Docker não estão instalados neste ambiente; migrations e `CREATE.sql` não foram aplicados a banco real. O comando de provisionamento compila, mas seu comportamento transacional e interativo depende de validação em PostgreSQL. O mapa compila, porém seu render integrado e consumo de tiles não foram verificados no navegador com sessão autenticada.

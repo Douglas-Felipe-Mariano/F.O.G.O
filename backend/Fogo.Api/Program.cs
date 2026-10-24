@@ -6,7 +6,28 @@ using Fogo.Api.Identity;
 using Fogo.Api.Repositories;
 using Microsoft.EntityFrameworkCore;
 
-var builder = WebApplication.CreateBuilder(args);
+const string argumentoProvisionarPrimeiroUsuario = "--provisionar-primeiro-usuario";
+if (args.Length == 1 && args[0] == "--healthcheck")
+{
+    try
+    {
+        using var clienteHttp = new HttpClient();
+        using var resposta = await clienteHttp.GetAsync("http://127.0.0.1:8080/api/saude");
+        Environment.ExitCode = resposta.IsSuccessStatusCode ? 0 : 1;
+    }
+    catch (HttpRequestException)
+    {
+        Environment.ExitCode = 1;
+    }
+
+    return;
+}
+
+var provisionarPrimeiroUsuario = args.Contains(argumentoProvisionarPrimeiroUsuario, StringComparer.Ordinal);
+var argumentosHospedeiro = args
+    .Where(argumento => argumento != argumentoProvisionarPrimeiroUsuario)
+    .ToArray();
+var builder = WebApplication.CreateBuilder(argumentosHospedeiro);
 
 builder.AdicionarAutenticacaoFogo();
 builder.Services.AdicionarProtecaoLogin();
@@ -28,6 +49,7 @@ builder.Services.AddControllers().AddJsonOptions(opcoes =>
 });
 builder.Services.AddScoped<IEquipamentoRepository, EquipamentoRepository>();
 builder.Services.AddScoped<EquipamentoService>();
+builder.Services.AddScoped<ProvisionadorPrimeiroUsuario>();
 
 var app = builder.Build();
 
@@ -41,6 +63,15 @@ if (builder.Configuration.GetValue<bool>("FOGO_APLICAR_MIGRATIONS"))
     await using var escopo = app.Services.CreateAsyncScope();
     var banco = escopo.ServiceProvider.GetRequiredService<FogoDbContext>();
     await banco.Database.MigrateAsync();
+}
+
+if (provisionarPrimeiroUsuario)
+{
+    await using var escopo = app.Services.CreateAsyncScope();
+    var provisionador = escopo.ServiceProvider.GetRequiredService<ProvisionadorPrimeiroUsuario>();
+    Environment.ExitCode = await provisionador.ExecutarAsync(CancellationToken.None) ? 0 : 1;
+    await app.DisposeAsync();
+    return;
 }
 
 app.UseCors();
