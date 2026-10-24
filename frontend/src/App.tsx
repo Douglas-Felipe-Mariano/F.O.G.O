@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import MapaEquipamentos, { LocalizacaoEquipamento } from './MapaEquipamentos';
 import './App.css';
 import './Visoes.css';
+import './FilaManutencao.css';
 
 type SituacaoEquipamento = 'aindaNaoInstalado' | 'operacional' | 'mauFuncionamento' | 'emManutencao' | 'desativado' | 'furtado';
 type TipoManutencao = 'imediata' | 'agendada' | 'periodica';
@@ -73,6 +74,8 @@ function App() {
   const [pesquisaMapa, setPesquisaMapa] = useState<Filtros>(vazioFiltros);
   const [filtros, setFiltros] = useState<Filtros>(vazioFiltros);
   const [pesquisa, setPesquisa] = useState<Filtros>(vazioFiltros);
+  const [filtroManutencao, setFiltroManutencao] = useState('');
+  const [pesquisaManutencao, setPesquisaManutencao] = useState('');
   const [erro, setErro] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [carregando, setCarregando] = useState(false);
@@ -106,6 +109,7 @@ function App() {
       if (pesquisa.tipo) parametros.set('tipo', pesquisa.tipo);
       if (pesquisa.situacao) parametros.set('situacao', pesquisa.situacao);
       if (pesquisa.bairro) parametros.set('bairro', pesquisa.bairro);
+      if (pesquisaManutencao) parametros.set('necessitaManutencao', pesquisaManutencao);
       const [respostaLista, respostaIndicadores] = await Promise.all([
         chamarApi(`/api/equipamentos?${parametros}`),
         chamarApi('/api/indicadores/equipamentos'),
@@ -119,7 +123,7 @@ function App() {
     } finally {
       setCarregando(false);
     }
-  }, [chamarApi, pagina, pesquisa, token]);
+  }, [chamarApi, pagina, pesquisa, pesquisaManutencao, token]);
 
   const carregarMapa = useCallback(async (limite = 500) => {
     if (!token) return;
@@ -166,6 +170,8 @@ function App() {
   }, [token]);
 
   const bairros = useMemo(() => [...new Set(itens.map((item) => item.bairro))].sort(), [itens]);
+  const possuiFiltrosInventario = Boolean(pesquisa.tipo || pesquisa.situacao || pesquisa.bairro || pesquisaManutencao);
+  const filaSemOutrosFiltros = pesquisaManutencao === 'true' && !pesquisa.tipo && !pesquisa.situacao && !pesquisa.bairro;
 
   async function entrar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -210,6 +216,15 @@ function App() {
     setModalAberto(true);
   }
 
+  function abrirFilaManutencao() {
+    setFiltros(vazioFiltros);
+    setPesquisa(vazioFiltros);
+    setFiltroManutencao('true');
+    setPesquisaManutencao('true');
+    setPagina(1);
+    setVisao('inventario');
+  }
+
   function abrirEdicao(equipamento: Equipamento) {
     setEditando(equipamento);
     setFormulario({
@@ -241,7 +256,7 @@ function App() {
       });
       setMensagem(editando ? 'Equipamento atualizado.' : 'Equipamento cadastrado.');
       setModalAberto(false);
-      await carregarDados();
+      await Promise.all([carregarDados(), ...(visao === 'mapa' ? [carregarMapa()] : [])]);
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível salvar o equipamento.');
     }
@@ -299,7 +314,7 @@ function App() {
           <div className="metric-grid">
             <article className="metric-card"><span className="metric-label">EQUIPAMENTOS CADASTRADOS</span><strong>{indicadores?.totalCadastrado ?? '—'}</strong><small>total persistido</small></article>
             <article className="metric-card"><span className="metric-label">OPERACIONAIS</span><strong>{indicadores?.porSituacao.find((item) => item.situacao === 'operacional')?.quantidade ?? 0}</strong><small>situação declarada</small></article>
-            <article className="metric-card"><span className="metric-label">NECESSITAM MANUTENÇÃO</span><strong>{indicadores?.necessitamManutencao ?? '—'}</strong><small>conforme cadastro</small></article>
+            <article className="metric-card"><span className="metric-label">NECESSITAM MANUTENÇÃO</span><strong>{indicadores?.necessitamManutencao ?? '—'}</strong><small>conforme cadastro</small><button type="button" className="maintenance-shortcut" onClick={abrirFilaManutencao}>Abrir fila →</button></article>
           </div>
 
           <nav className="view-tabs" aria-label="Visões do inventário">
@@ -309,18 +324,19 @@ function App() {
 
           {visao === 'inventario' ? <section className="inventory-panel" aria-labelledby="inventory-title">
             <div className="panel-heading">
-              <div><p className="eyebrow">BASE DE ATIVOS</p><h2 id="inventory-title">Equipamentos <span>({total})</span></h2></div>
+              <div><p className="eyebrow">{pesquisaManutencao === 'true' ? 'MANUTENÇÃO' : 'BASE DE ATIVOS'}</p><h2 id="inventory-title">{pesquisaManutencao === 'true' ? 'Fila de manutenção' : 'Equipamentos'} <span>({total})</span></h2></div>
               <button className="button button-quiet refresh-button" onClick={() => void carregarDados()} disabled={carregando}>↻ Atualizar</button>
             </div>
-            <form className="filters" onSubmit={(evento) => { evento.preventDefault(); setPagina(1); setPesquisa(filtros); }}>
+            <form className="filters inventory-filters" onSubmit={(evento) => { evento.preventDefault(); setPagina(1); setPesquisa(filtros); setPesquisaManutencao(filtroManutencao); }}>
               <label>Tipo<input placeholder="Ex.: radar" value={filtros.tipo} onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })} /></label>
               <label>Situação<select value={filtros.situacao} onChange={(e) => setFiltros({ ...filtros, situacao: e.target.value })}><option value="">Todas</option>{estados.map((estado) => <option value={estado.valor} key={estado.valor}>{estado.rotulo}</option>)}</select></label>
               <label>Bairro<input list="bairros-cadastrados" value={filtros.bairro} onChange={(e) => setFiltros({ ...filtros, bairro: e.target.value })} /><datalist id="bairros-cadastrados">{bairros.map((bairro) => <option key={bairro}>{bairro}</option>)}</datalist></label>
+              <label>Necessita manutenção<select value={filtroManutencao} onChange={(e) => setFiltroManutencao(e.target.value)}><option value="">Todas</option><option value="true">Sim</option><option value="false">Não</option></select></label>
               <button className="button button-secondary" type="submit">Aplicar filtros</button>
-              <button className="button button-quiet" type="button" onClick={() => { setFiltros(vazioFiltros); setPesquisa(vazioFiltros); setPagina(1); }}>Limpar</button>
+              <button className="button button-quiet" type="button" onClick={() => { setFiltros(vazioFiltros); setPesquisa(vazioFiltros); setFiltroManutencao(''); setPesquisaManutencao(''); setPagina(1); }}>Limpar</button>
             </form>
             {carregando ? <div className="empty-state"><span className="spinner" />Carregando dados persistidos…</div> : itens.length === 0 ? (
-              <div className="empty-state"><span className="empty-icon">⌁</span><h3>{total === 0 ? 'Nenhum equipamento cadastrado' : 'Nenhum resultado nesta página'}</h3><p>{total === 0 ? 'O inventário está vazio. Cadastre um equipamento para começar; nenhum dado fictício foi incluído.' : 'Altere os filtros ou navegue para outra página.'}</p>{total === 0 && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro equipamento</button>}</div>
+              <div className="empty-state"><span className="empty-icon">⌁</span><h3>{total > 0 ? 'Nenhum resultado nesta página' : filaSemOutrosFiltros ? 'Nenhuma manutenção indicada' : possuiFiltrosInventario ? 'Nenhum resultado para os filtros' : 'Nenhum equipamento cadastrado'}</h3><p>{total > 0 ? 'Altere os filtros ou navegue para outra página.' : filaSemOutrosFiltros ? 'Nenhum registro persistido está marcado como necessitando manutenção.' : possuiFiltrosInventario ? 'Revise ou limpe os filtros para consultar outros equipamentos.' : 'O inventário está vazio. Cadastre um equipamento para começar; nenhum dado fictício foi incluído.'}</p>{total === 0 && !possuiFiltrosInventario && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro equipamento</button>}</div>
             ) : (
               <div className="table-wrap"><table><thead><tr><th>Equipamento</th><th>Localização</th><th>Situação</th><th>Manutenção</th><th>Origem</th><th><span className="sr-only">Ação</span></th></tr></thead><tbody>{itens.map((item) => (
                 <tr key={item.id}>

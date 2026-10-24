@@ -26,11 +26,28 @@ public sealed class EquipamentoServiceTests
         Assert.All(resposta.Itens, item => Assert.NotEqual(Guid.Empty, item.Id));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Listar_AplicaFiltroDeNecessidadeDeManutencao(bool necessitaManutencao)
+    {
+        var filtros = new FiltrosEquipamentos(1, 25, null, null, null, necessitaManutencao);
+        var repositorio = new RepositorioMapaFalso();
+        var servico = new EquipamentoService(repositorio, TimeProvider.System);
+
+        await servico.ListarAsync(filtros, CancellationToken.None);
+
+        Assert.Equal(filtros, repositorio.FiltrosListagemInventario);
+        Assert.Equal(filtros, repositorio.FiltrosContagemInventario);
+    }
+
     private sealed class RepositorioMapaFalso : IEquipamentoRepository
     {
         public FiltrosMapaEquipamentos? FiltrosContagem { get; private set; }
         public FiltrosMapaEquipamentos? FiltrosListagem { get; private set; }
         public int Limite { get; private set; }
+        public FiltrosEquipamentos? FiltrosContagemInventario { get; private set; }
+        public FiltrosEquipamentos? FiltrosListagemInventario { get; private set; }
 
         public Task<int> ContarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, CancellationToken cancelamento)
         {
@@ -53,11 +70,17 @@ public sealed class EquipamentoServiceTests
             return Task.FromResult(equipamentos);
         }
 
-        public Task<int> ContarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento) =>
-            throw new NotImplementedException();
+        public Task<int> ContarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento)
+        {
+            FiltrosContagemInventario = filtros;
+            return Task.FromResult(0);
+        }
 
-        public Task<IReadOnlyCollection<Equipamento>> ListarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento) =>
-            throw new NotImplementedException();
+        public Task<IReadOnlyCollection<Equipamento>> ListarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento)
+        {
+            FiltrosListagemInventario = filtros;
+            return Task.FromResult<IReadOnlyCollection<Equipamento>>([]);
+        }
 
         public Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento) =>
             throw new NotImplementedException();

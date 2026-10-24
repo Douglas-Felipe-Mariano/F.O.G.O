@@ -82,6 +82,11 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
             consulta = consulta.Where(item => item.Bairro == filtros.Bairro.Trim());
         }
 
+        if (filtros.NecessitaManutencao.HasValue)
+        {
+            consulta = consulta.Where(item => item.NecessitaManutencao == filtros.NecessitaManutencao.Value);
+        }
+
         return consulta;
     }
 

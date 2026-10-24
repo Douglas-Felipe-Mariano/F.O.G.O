@@ -7,7 +7,8 @@ public sealed record FiltrosEquipamentos(
     int TamanhoPagina,
     string? Tipo,
     SituacaoEquipamento? Situacao,
-    string? Bairro);
+    string? Bairro,
+    bool? NecessitaManutencao = null);
 
 public sealed record FiltrosMapaEquipamentos(
     string? Tipo,

@@ -4,9 +4,9 @@ Ferramenta Onisciente de Gestão e Operações — etapa bônus do desafio da Ds
 
 ## Estado
 
-O desafio está dividido em inventário inteligente, central de operações e cidade preditiva. A base contém endpoint técnico de saúde, autenticação fundacional, API protegida para cadastro, consulta, filtros, atualização e contagens agregadas de equipamentos, além de interface web de inventário/login com mapa dos equipamentos persistidos georreferenciados. Cadastro de agentes e predição ainda não foram implementados. As decisões e pendências estão em [docs/arquitetura.md](docs/arquitetura.md).
+O desafio está dividido em inventário inteligente, central de operações e cidade preditiva. A base contém endpoint técnico de saúde, autenticação fundacional, API protegida para cadastro, consulta, filtros, atualização e contagens agregadas de equipamentos, além de interface web de inventário/login com mapa dos equipamentos persistidos georreferenciados. A métrica de manutenção abre uma fila dos equipamentos explicitamente marcados, filtrável pelo inventário. Cadastro de agentes e predição ainda não foram implementados. As decisões e pendências estão em [docs/arquitetura.md](docs/arquitetura.md).
 
-**Etapa atual (24/10):** núcleo da Fase 2 concluído; início da Fase 3 com endpoint e visualização de mapa. Falta validar o fluxo conectado a PostgreSQL e provisionar o primeiro usuário por procedimento seguro.
+**Etapa atual (24/10):** núcleo da Fase 2 e fluxo principal da Fase 3 implementados, incluindo mapa geográfico e fila filtrável de manutenção. Falta validar o fluxo conectado a PostgreSQL e provisionar o primeiro usuário por procedimento seguro.
 
 Os SDKs foram preparados em diretório local de usuário (fora do repositório): .NET SDK 10.0.402 e Node.js 24.20.0/npm 11.19.0. Os pacotes foram baixados de fontes oficiais e seus hashes conferidos. Para compilar no PowerShell desta máquina, foi necessário adicionar `FogoTools\dotnet` e `FogoTools\node-v24.20.0-win-x64` ao PATH da sessão; npm foi chamado via `npm.cmd` devido à política local que bloqueia scripts `.ps1`. PostgreSQL, Docker e `psql` não estão instalados; a fatia atual não depende deles.
 
@@ -34,12 +34,12 @@ Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o 
 
 1. Provisionar PostgreSQL e aplicar migrations somente a uma base alvo revisada; nunca resetar bancos existentes.
 2. Implementar provisionamento administrativo seguro e validar sessões e operações com PostgreSQL.
-3. Validar mapa e inventário integrados com dados persistidos; a API limita o mapa a 500 pontos por padrão e 1.000 no máximo por consulta.
+3. Validar mapa, fila de manutenção e inventário integrados com dados persistidos; a API limita o mapa a 500 pontos por padrão e 1.000 no máximo por consulta.
 4. Avaliar cadastro de agentes, atualização em tempo real, integrações e predição conforme dados, autorização e prazo.
 
 ## Validação executada
 
-- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: passou (25 testes; incluem autorização, descoberta dos Controllers, contrato JSON, validações, bootstrap CSRF, modelo EF e encaminhamento de filtros do mapa, mas não persistência nem fluxos completos de sessão).
+- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: passou (27 testes; incluem autorização, descoberta dos Controllers, contrato JSON, validações, bootstrap CSRF, modelo EF e encaminhamento dos filtros do mapa e da fila de manutenção, mas não persistência nem fluxos completos de sessão).
 - `dotnet build backend/Fogo.Api/Fogo.Api.csproj --no-restore`: passou.
 - Migration inicial do Identity e das sessões gerada em `backend/Fogo.Api/Identity/Migrations`; não foi aplicada porque PostgreSQL ainda não está instalado.
 - Migration incremental de equipamentos também gerada. O espelho SQL para leitura da arquitetura do banco está em `backend/database/CREATE.sql` e não contém dados iniciais.

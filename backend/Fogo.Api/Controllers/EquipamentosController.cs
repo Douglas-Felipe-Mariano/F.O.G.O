@@ -18,6 +18,7 @@ public sealed class EquipamentosController(EquipamentoService service) : Control
         [FromQuery] string? tipo = null,
         [FromQuery] SituacaoEquipamento? situacao = null,
         [FromQuery] string? bairro = null,
+        [FromQuery] bool? necessitaManutencao = null,
         CancellationToken cancelamento = default)
     {
         if (pagina < 1 || tamanhoPagina is < 1 or > 100 || (long)(pagina - 1) * tamanhoPagina > int.MaxValue)
@@ -37,7 +38,7 @@ public sealed class EquipamentosController(EquipamentoService service) : Control
             }));
         }
 
-        var filtros = new FiltrosEquipamentos(pagina, tamanhoPagina, tipo, situacao, bairro);
+        var filtros = new FiltrosEquipamentos(pagina, tamanhoPagina, tipo, situacao, bairro, necessitaManutencao);
         var resultado = await service.ListarAsync(filtros, cancelamento);
         return Ok(new PaginaEquipamentosResposta(pagina, tamanhoPagina, resultado.Total, resultado.Itens));
     }
