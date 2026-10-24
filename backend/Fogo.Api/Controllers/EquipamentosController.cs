@@ -11,7 +11,7 @@ namespace Fogo.Api.Controllers;
 [Route("api/equipamentos")]
 public sealed class EquipamentosController(
     EquipamentoService service,
-    PublicadorEventosEquipamentos publicadorEventos) : ControllerBase
+    IPublicadorEventosEquipamentos publicadorEventos) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PaginaEquipamentosResposta>> ListarAsync(
@@ -99,7 +99,7 @@ public sealed class EquipamentosController(
             equipamento.Id,
             "criado",
             equipamento.AtualizadoEm,
-            CancellationToken.None);
+            cancelamento);
         return CreatedAtAction(nameof(ConsultarAsync), new { id = equipamento.Id }, equipamento);
     }
 
@@ -127,7 +127,7 @@ public sealed class EquipamentosController(
             equipamentoAtualizado.Id,
             "atualizado",
             equipamentoAtualizado.AtualizadoEm,
-            CancellationToken.None);
+            cancelamento);
 
         return Ok(equipamentoAtualizado);
     }

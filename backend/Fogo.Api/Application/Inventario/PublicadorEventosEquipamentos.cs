@@ -2,9 +2,18 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Fogo.Api.Application.Inventario;
 
+public interface IPublicadorEventosEquipamentos
+{
+    Task PublicarAlteracaoAsync(
+        Guid equipamentoId,
+        string operacao,
+        DateTimeOffset atualizadoEm,
+        CancellationToken cancelamento);
+}
+
 public sealed class PublicadorEventosEquipamentos(
     IHubContext<EquipamentosHub> hub,
-    ILogger<PublicadorEventosEquipamentos> logger)
+    ILogger<PublicadorEventosEquipamentos> logger) : IPublicadorEventosEquipamentos
 {
     public async Task PublicarAlteracaoAsync(
         Guid equipamentoId,

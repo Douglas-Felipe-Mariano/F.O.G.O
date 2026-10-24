@@ -51,7 +51,7 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<IEquipamentoRepository, EquipamentoRepository>();
 builder.Services.AddScoped<EquipamentoService>();
 builder.Services.AddScoped<ProvisionadorPrimeiroUsuario>();
-builder.Services.AddScoped<PublicadorEventosEquipamentos>();
+builder.Services.AddScoped<IPublicadorEventosEquipamentos, PublicadorEventosEquipamentos>();
 
 var app = builder.Build();
 

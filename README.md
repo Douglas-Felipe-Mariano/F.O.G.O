@@ -51,7 +51,7 @@ Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o 
 
 ## Validação executada
 
-- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: passou (28 testes; incluem autorização, recusa de negociação anônima no hub, descoberta dos Controllers, contrato JSON, validações, bootstrap CSRF, modelo EF e encaminhamento dos filtros do mapa e da fila de manutenção; não cobre publicação SignalR nem persistência/fluxos completos de sessão).
+- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: passou (39 testes; incluem autorização, recusa de negociação anônima no hub, contrato/nome do evento SignalR, falha de entrega best-effort, publicação somente após sucesso em criação/edição, mapeamento e timestamps do serviço de equipamentos, e ausência de persistência em validações/falhas; ainda não cobre entrega SignalR a clientes nem persistência/fluxos completos de sessão).
 - `dotnet build backend/Fogo.Api/Fogo.Api.csproj --no-restore`: passou.
 - Migration inicial do Identity e das sessões gerada em `backend/Fogo.Api/Identity/Migrations`; não foi aplicada porque PostgreSQL ainda não está instalado.
 - Migration incremental de equipamentos também gerada. O espelho SQL para leitura da arquitetura do banco está em `backend/database/CREATE.sql` e não contém dados iniciais.
