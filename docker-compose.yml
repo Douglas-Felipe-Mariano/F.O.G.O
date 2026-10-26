@@ -24,7 +24,7 @@ services:
       ASPNETCORE_HTTP_PORTS: 8080
       ConnectionStrings__PostgreSQL: "Host=banco;Port=5432;Database=${POSTGRES_DB:-fogo};Username=${POSTGRES_USER:-fogo};Password=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}"
       FOGO_JWT_KEY: ${FOGO_JWT_KEY:?Defina FOGO_JWT_KEY no arquivo .env}
-      FOGO_ORIGINS: ${FOGO_ORIGINS:-http://localhost:8080}
+      FOGO_ORIGINS: ${FOGO_ORIGINS:-http://localhost:8080;http://127.0.0.1:8080}
       FOGO_APLICAR_MIGRATIONS: "true"
       FOGO_HTTPS_REDIRECIONAR: "false"
     depends_on:

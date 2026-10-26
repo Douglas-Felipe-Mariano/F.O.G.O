@@ -234,7 +234,11 @@ function App() {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
         body: JSON.stringify(credenciais),
       });
-      if (!resposta.ok) throw new Error(resposta.status === 401 ? 'Usuário ou senha inválidos, ou e-mail ainda não confirmado.' : 'Não foi possível entrar. Confira a configuração da API.');
+      if (!resposta.ok) throw new Error(resposta.status === 401
+        ? 'Usuário ou senha inválidos, ou e-mail ainda não confirmado.'
+        : resposta.status === 403
+          ? 'A API recusou a origem ou a proteção CSRF. Atualize a página; se persistir, confira FOGO_ORIGINS.'
+          : 'Não foi possível entrar. Confira se a API está disponível.');
       const dados = await resposta.json() as RespostaToken;
       setToken(dados.tokenAcesso);
       setMensagem('Sessão iniciada.');

@@ -7,6 +7,7 @@ using Fogo.Api.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 const string argumentoProvisionarPrimeiroUsuario = "--provisionar-primeiro-usuario";
+const string argumentoProvisionarUsuario = "--provisionar-usuario";
 if (args.Length == 1 && args[0] == "--healthcheck")
 {
     try
@@ -24,8 +25,16 @@ if (args.Length == 1 && args[0] == "--healthcheck")
 }
 
 var provisionarPrimeiroUsuario = args.Contains(argumentoProvisionarPrimeiroUsuario, StringComparer.Ordinal);
+var provisionarUsuario = args.Contains(argumentoProvisionarUsuario, StringComparer.Ordinal);
+if (provisionarPrimeiroUsuario && provisionarUsuario)
+{
+    Console.Error.WriteLine("Use somente um dos comandos de provisionamento por execução.");
+    Environment.ExitCode = 2;
+    return;
+}
+
 var argumentosHospedeiro = args
-    .Where(argumento => argumento != argumentoProvisionarPrimeiroUsuario)
+    .Where(argumento => argumento != argumentoProvisionarPrimeiroUsuario && argumento != argumentoProvisionarUsuario)
     .ToArray();
 var builder = WebApplication.CreateBuilder(argumentosHospedeiro);
 
@@ -67,11 +76,13 @@ if (builder.Configuration.GetValue<bool>("FOGO_APLICAR_MIGRATIONS"))
     await banco.Database.MigrateAsync();
 }
 
-if (provisionarPrimeiroUsuario)
+if (provisionarPrimeiroUsuario || provisionarUsuario)
 {
     await using var escopo = app.Services.CreateAsyncScope();
     var provisionador = escopo.ServiceProvider.GetRequiredService<ProvisionadorPrimeiroUsuario>();
-    Environment.ExitCode = await provisionador.ExecutarAsync(CancellationToken.None) ? 0 : 1;
+    Environment.ExitCode = await provisionador.ExecutarAsync(
+        CancellationToken.None,
+        somentePrimeiroUsuario: provisionarPrimeiroUsuario) ? 0 : 1;
     await app.DisposeAsync();
     return;
 }

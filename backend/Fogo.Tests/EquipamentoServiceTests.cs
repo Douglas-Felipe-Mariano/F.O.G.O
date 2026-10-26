@@ -124,6 +124,81 @@ public sealed class EquipamentoServiceTests
         Assert.Equal(filtros, repositorio.FiltrosContagemInventario);
     }
 
+    [Fact]
+    public async Task Listar_RetornaTotalEItensMapeadosDoRepositorio()
+    {
+        var filtros = new FiltrosEquipamentos(2, 10, "Radar", SituacaoEquipamento.Operacional, "Centro");
+        var equipamento = CriarEquipamentoParaAtualizacao();
+        equipamento.Marca = "Fabricante";
+        var repositorio = new RepositorioMapaFalso
+        {
+            TotalInventario = 17,
+            ItensInventario = [equipamento]
+        };
+        var servico = new EquipamentoService(repositorio, TimeProvider.System);
+
+        var (itens, total) = await servico.ListarAsync(filtros, CancellationToken.None);
+
+        Assert.Equal(17, total);
+        var resposta = Assert.Single(itens);
+        Assert.Equal(equipamento.Id, resposta.Id);
+        Assert.Equal(equipamento.NumeroSerie, resposta.NumeroSerie);
+        Assert.Equal("Fabricante", resposta.Marca);
+        Assert.Equal(filtros, repositorio.FiltrosContagemInventario);
+        Assert.Equal(filtros, repositorio.FiltrosListagemInventario);
+    }
+
+    [Fact]
+    public async Task ConsultarAsync_EquipamentoExistente_RetornaRespostaMapeada()
+    {
+        var equipamento = CriarEquipamentoParaAtualizacao();
+        equipamento.Marca = "Fabricante";
+        var repositorio = new RepositorioMapaFalso { EquipamentoConsultado = equipamento };
+        var servico = new EquipamentoService(repositorio, TimeProvider.System);
+
+        var resposta = await servico.ConsultarAsync(equipamento.Id, CancellationToken.None);
+
+        Assert.NotNull(resposta);
+        Assert.Equal(equipamento.Id, repositorio.IdConsultado);
+        Assert.Equal(equipamento.Id, resposta.Id);
+        Assert.Equal(equipamento.Tipo, resposta.Tipo);
+        Assert.Equal(equipamento.NumeroSerie, resposta.NumeroSerie);
+        Assert.Equal("Fabricante", resposta.Marca);
+    }
+
+    [Fact]
+    public async Task ConsultarAsync_EquipamentoInexistente_RetornaNulo()
+    {
+        var repositorio = new RepositorioMapaFalso();
+        var servico = new EquipamentoService(repositorio, TimeProvider.System);
+
+        var resposta = await servico.ConsultarAsync(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Null(resposta);
+    }
+
+    [Fact]
+    public async Task ConsultarIndicadoresAsync_SomaSituacoesEIncluiTotalDeManutencoes()
+    {
+        IReadOnlyCollection<ContagemSituacao> contagens =
+        [
+            new(SituacaoEquipamento.Operacional, 8),
+            new(SituacaoEquipamento.EmManutencao, 3)
+        ];
+        var repositorio = new RepositorioMapaFalso
+        {
+            ContagensPorSituacao = contagens,
+            TotalManutencoes = 2
+        };
+        var servico = new EquipamentoService(repositorio, TimeProvider.System);
+
+        var indicadores = await servico.ConsultarIndicadoresAsync(CancellationToken.None);
+
+        Assert.Equal(11, indicadores.TotalCadastrado);
+        Assert.Equal(contagens, indicadores.PorSituacao);
+        Assert.Equal(2, indicadores.NecessitamManutencao);
+    }
+
     private static EquipamentoRequisicao CriarRequisicao() => new(
         " Radar ",
         " SER-001 ",
@@ -171,6 +246,12 @@ public sealed class EquipamentoServiceTests
         public FiltrosEquipamentos? FiltrosContagemInventario { get; private set; }
         public FiltrosEquipamentos? FiltrosListagemInventario { get; private set; }
         public Equipamento? EquipamentoParaAtualizacao { get; init; }
+        public Equipamento? EquipamentoConsultado { get; init; }
+        public Guid? IdConsultado { get; private set; }
+        public int TotalInventario { get; init; }
+        public IReadOnlyCollection<Equipamento> ItensInventario { get; init; } = [];
+        public IReadOnlyCollection<ContagemSituacao> ContagensPorSituacao { get; init; } = [];
+        public int TotalManutencoes { get; init; }
         public Equipamento? EquipamentoAdicionado { get; private set; }
         public int ConsultasParaAtualizacao { get; private set; }
         public bool SalvouAlteracoes { get; private set; }
@@ -199,17 +280,20 @@ public sealed class EquipamentoServiceTests
         public Task<int> ContarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento)
         {
             FiltrosContagemInventario = filtros;
-            return Task.FromResult(0);
+            return Task.FromResult(TotalInventario);
         }
 
         public Task<IReadOnlyCollection<Equipamento>> ListarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento)
         {
             FiltrosListagemInventario = filtros;
-            return Task.FromResult<IReadOnlyCollection<Equipamento>>([]);
+            return Task.FromResult(ItensInventario);
         }
 
-        public Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento) =>
-            throw new NotImplementedException();
+        public Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento)
+        {
+            IdConsultado = id;
+            return Task.FromResult(EquipamentoConsultado);
+        }
 
         public Task<Equipamento?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento)
         {
@@ -218,10 +302,10 @@ public sealed class EquipamentoServiceTests
         }
 
         public Task<IReadOnlyCollection<ContagemSituacao>> ContarPorSituacaoAsync(CancellationToken cancelamento) =>
-            throw new NotImplementedException();
+            Task.FromResult(ContagensPorSituacao);
 
         public Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento) =>
-            throw new NotImplementedException();
+            Task.FromResult(TotalManutencoes);
 
         public Task AdicionarAsync(Equipamento equipamento, CancellationToken cancelamento)
         {

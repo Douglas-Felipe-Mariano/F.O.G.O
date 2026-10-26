@@ -13,7 +13,7 @@ public sealed class ProvisionadorPrimeiroUsuario(
 {
     private const long ChaveBloqueioAdvisory = 0x464F474F;
 
-    public async Task<bool> ExecutarAsync(CancellationToken cancelamento)
+    public async Task<bool> ExecutarAsync(CancellationToken cancelamento, bool somentePrimeiroUsuario = true)
     {
         if (Console.IsInputRedirected)
         {
@@ -53,7 +53,8 @@ public sealed class ProvisionadorPrimeiroUsuario(
             bloqueioAdquirido = true;
 
             await using var transacao = await banco.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancelamento);
-            if (await gerenciadorUsuarios.Users.AnyAsync(cancelamento))
+            var jaExisteUsuario = await gerenciadorUsuarios.Users.AnyAsync(cancelamento);
+            if (somentePrimeiroUsuario && jaExisteUsuario)
             {
                 Console.Error.WriteLine("Já existe pelo menos um usuário. O provisionamento inicial foi recusado.");
                 return false;
@@ -78,7 +79,9 @@ public sealed class ProvisionadorPrimeiroUsuario(
             }
 
             await transacao.CommitAsync(cancelamento);
-            Console.WriteLine("Primeiro usuário criado. O endereço de e-mail foi confirmado pelo provisionamento local.");
+            Console.WriteLine(somentePrimeiroUsuario
+                ? "Primeiro usuário criado. O endereço de e-mail foi confirmado pelo provisionamento local."
+                : "Usuário criado. O endereço de e-mail foi confirmado pelo provisionamento local.");
             Console.WriteLine("Aviso: a aplicação ainda não define papéis ou permissões diferenciadas entre usuários autenticados.");
             return true;
         }

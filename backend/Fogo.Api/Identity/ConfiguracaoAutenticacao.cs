@@ -28,8 +28,26 @@ public static class ConfiguracaoAutenticacao
             CookiesSeguros = !builder.Environment.IsDevelopment()
                 || builder.Configuration.GetValue<bool>("FOGO_HTTPS_DEV")
         };
-        var origensPermitidas = (builder.Configuration["FOGO_ORIGINS"] ?? "http://localhost:5173")
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var origensConfiguradas = builder.Configuration["FOGO_ORIGINS"];
+        if (string.IsNullOrWhiteSpace(origensConfiguradas))
+        {
+            if (!builder.Environment.IsDevelopment())
+            {
+                throw new InvalidOperationException("Configure FOGO_ORIGINS com as origens permitidas fora do ambiente de desenvolvimento.");
+            }
+
+            origensConfiguradas = "http://localhost:5173";
+        }
+
+        var origensInformadas = origensConfiguradas.Split(';', StringSplitOptions.TrimEntries);
+        if (origensInformadas.Any(origem => !TentarNormalizarOrigemHttp(origem, out _)))
+        {
+            throw new InvalidOperationException("FOGO_ORIGINS deve conter somente origens HTTP/HTTPS válidas, sem caminho, consulta ou fragmento, separadas por ponto e vírgula.");
+        }
+
+        var origensPermitidas = origensInformadas
+            .Select(origem => TentarNormalizarOrigemHttp(origem, out var normalizada) ? normalizada : origem)
+            .ToArray();
 
         builder.Services.AddSingleton(opcoesToken);
         builder.Services.AddSingleton(TimeProvider.System);
@@ -103,6 +121,24 @@ public static class ConfiguracaoAutenticacao
                 .WithHeaders("Content-Type", "Authorization", ProtecaoRequisicao.CabecalhoCsrf)));
 
         return builder;
+    }
+
+    private static bool TentarNormalizarOrigemHttp(string origem, out string normalizada)
+    {
+        if (Uri.TryCreate(origem, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && !string.IsNullOrEmpty(uri.Host)
+            && string.IsNullOrEmpty(uri.UserInfo)
+            && uri.AbsolutePath == "/"
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment))
+        {
+            normalizada = uri.GetLeftPart(UriPartial.Authority);
+            return true;
+        }
+
+        normalizada = string.Empty;
+        return false;
     }
 
     public static IServiceCollection AdicionarProtecaoLogin(this IServiceCollection servicos)
