@@ -22,7 +22,7 @@ public interface IEquipamentoRepository
     Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento);
     Task<Equipamento?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento);
     Task<int> ContarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, CancellationToken cancelamento);
-    Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, int limite, CancellationToken cancelamento);
+    Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, int deslocamento, int limite, CancellationToken cancelamento);
     Task<IReadOnlyCollection<ContagemSituacao>> ContarPorSituacaoAsync(CancellationToken cancelamento);
     Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento);
     Task AdicionarAsync(Equipamento equipamento, CancellationToken cancelamento);

@@ -55,16 +55,17 @@ public sealed class EquipamentosController(
     [HttpGet("localizacoes")]
     public async Task<ActionResult<MapaEquipamentosResposta>> ListarLocalizacoesAsync(
         [FromQuery] int limite = 500,
+        [FromQuery] int deslocamento = 0,
         [FromQuery] string? tipo = null,
         [FromQuery] SituacaoEquipamento? situacao = null,
         [FromQuery] string? bairro = null,
         CancellationToken cancelamento = default)
     {
-        if (limite is < 1 or > 1000)
+        if (limite is < 1 or > 1000 || deslocamento < 0)
         {
             return ValidationProblem(ModelStateFrom(new Dictionary<string, string[]>
             {
-                ["limite"] = ["O limite deve estar entre 1 e 1000."]
+            ["paginacao"] = ["O limite deve estar entre 1 e 1000 e o deslocamento não pode ser negativo."]
             }));
         }
 
@@ -78,7 +79,7 @@ public sealed class EquipamentosController(
         }
 
         var filtros = new FiltrosMapaEquipamentos(tipo, situacao, bairro);
-        return Ok(await service.ListarLocalizacoesAsync(filtros, limite, cancelamento));
+        return Ok(await service.ListarLocalizacoesAsync(filtros, deslocamento, limite, cancelamento));
     }
 
     [HttpPost]

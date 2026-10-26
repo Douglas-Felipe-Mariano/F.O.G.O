@@ -28,10 +28,10 @@ public sealed class AgenteService(IAgenteRepository repositorio, TimeProvider re
         return new IndicadoresAgentesResposta(porSituacao.Sum(item => item.Quantidade), porSituacao);
     }
 
-    public async Task<MapaAgentesResposta> ListarLocalizacoesAsync(int limite, CancellationToken cancelamento)
+    public async Task<MapaAgentesResposta> ListarLocalizacoesAsync(int deslocamento, int limite, CancellationToken cancelamento)
     {
         var total = await repositorio.ContarComCoordenadasAsync(cancelamento);
-        var agentes = await repositorio.ListarComCoordenadasAsync(limite, cancelamento);
+        var agentes = await repositorio.ListarComCoordenadasAsync(deslocamento, limite, cancelamento);
         var localizacoes = agentes.Select(agente => new LocalizacaoAgenteResposta(
             agente.Id,
             agente.Nome,
@@ -40,7 +40,7 @@ public sealed class AgenteService(IAgenteRepository repositorio, TimeProvider re
             agente.Latitude!.Value,
             agente.Longitude!.Value,
             agente.Situacao)).ToArray();
-        return new MapaAgentesResposta(total, limite, total > localizacoes.Length, localizacoes);
+        return new MapaAgentesResposta(total, limite, (long)deslocamento + localizacoes.Length < total, localizacoes);
     }
 
     public async Task<ResultadoOperacao<AgenteResposta>> CriarAsync(AgenteRequisicao requisicao, CancellationToken cancelamento)

@@ -24,11 +24,12 @@ public sealed class EquipamentoService(
 
     public async Task<MapaEquipamentosResposta> ListarLocalizacoesAsync(
         FiltrosMapaEquipamentos filtros,
+        int deslocamento,
         int limite,
         CancellationToken cancelamento)
     {
         var total = await repositorio.ContarComCoordenadasAsync(filtros, cancelamento);
-        var equipamentos = await repositorio.ListarComCoordenadasAsync(filtros, limite, cancelamento);
+        var equipamentos = await repositorio.ListarComCoordenadasAsync(filtros, deslocamento, limite, cancelamento);
         var localizacoes = equipamentos.Select(equipamento => new LocalizacaoEquipamentoResposta(
             equipamento.Id,
             equipamento.Tipo,
@@ -42,7 +43,7 @@ public sealed class EquipamentoService(
             equipamento.Longitude!.Value,
             equipamento.Situacao)).ToArray();
 
-        return new MapaEquipamentosResposta(total, limite, total > localizacoes.Length, localizacoes);
+        return new MapaEquipamentosResposta(total, limite, (long)deslocamento + localizacoes.Length < total, localizacoes);
     }
 
     public async Task<IndicadoresEquipamentosResposta> ConsultarIndicadoresAsync(CancellationToken cancelamento)

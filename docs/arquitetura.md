@@ -2,7 +2,7 @@
 
 ## Estado do projeto
 
-Em 26/10/2026, o F.O.G.O. tem autenticação, inventário de equipamentos, cadastro e quadro de agentes, mapa operacional e notificações de alteração via SignalR. O módulo preditivo e as integrações externas não estão implementados. Os builds e testes automatizados foram executados; a validação ponta a ponta com PostgreSQL está pendente porque o Docker Engine não está acessível neste ambiente.
+Em 26/10/2026, o F.O.G.O. tem autenticação, inventário de equipamentos, cadastro e quadro de agentes, mapa operacional inicial e notificações de alteração via SignalR. O módulo preditivo e as integrações externas não estão implementados. A stack Compose foi validada com PostgreSQL real, healthchecks, portal e login; a base atual não tem registros de equipamento ou agente com coordenadas.
 
 O projeto usa ASP.NET Core 10, PostgreSQL e Entity Framework Core no backend; React, TypeScript e Vite no frontend. A arquitetura é um monólito modular, organizado em Controllers, Application Services, Repositories e `FogoDbContext`. Migrations EF são a fonte oficial do esquema. `backend/database/CREATE.sql` é um espelho SQL de referência, que deve ser mantido alinhado às migrations; ainda não foi aplicado a uma instância real.
 
@@ -30,7 +30,7 @@ A situação (Disponível, Em atendimento ou Indisponível) é informada manualm
 
 ### Mapa e atualizações
 
-O mapa combina equipamentos e agentes que tenham coordenadas completas; os símbolos de agente e equipamento são distintos. A consulta de equipamentos aceita filtros por tipo, situação e bairro, retorna até 500 pontos por padrão e permite no máximo 1.000. A consulta de agentes retorna até 1.000 pontos. As respostas incluem total e sinalização de truncamento, portanto pontos além do limite não são exibidos. O mapa usa tiles OpenStreetMap, requer acesso à internet e mantém atribuição aos contribuidores.
+Após a autenticação, o mapa é a primeira visão operacional. Ele combina equipamentos e agentes com coordenadas completas, usando ícones distintos; os ícones dos equipamentos também indicam a situação. A interface busca todos os pontos em lotes de até 1.000 registros, por deslocamento, para não deixar localizações de fora por causa do limite de uma única chamada. Os endpoints devolvem total e sinalização de truncamento. O mapa usa tiles OpenStreetMap, requer acesso à internet e mantém atribuição aos contribuidores. A autenticação continua obrigatória e registros sem coordenadas não aparecem.
 
 O hub autenticado `/hubs/equipamentos` publica eventos mínimos de alteração depois de uma gravação bem-sucedida. As telas consultam novamente a API em vez de receber dados completos pelo evento. A publicação é best-effort e não usa outbox; ao reconectar, a interface recarrega os dados. O fluxo visual com sessão real, PostgreSQL e WebSocket ainda precisa de validação integrada.
 
@@ -42,21 +42,21 @@ A stack Compose contém PostgreSQL persistente, API e frontend servido por Nginx
 
 Para iniciar, é necessário ter Docker Desktop/Engine em execução, copiar `.env.example` para `.env` e definir segredos fortes próprios antes de subir a stack. Em seguida, um operador cria a conta pelo comando de provisionamento documentado no README. Nenhuma conta ou equipamento é criado automaticamente.
 
-Na máquina usada para esta validação, o CLI Docker existe, mas o daemon não responde (pipe do Docker Desktop Linux Engine indisponível). Assim, a stack não está ativa e `http://localhost:8080` é o endereço configurado, não um endereço atualmente acessível. Não foi possível executar migrations nem confirmar login com banco real. Os SDKs .NET 10.0.403 e Node.js 24.22.1/npm 11.19.1 estão preparados fora do repositório em `%LOCALAPPDATA%\FogoTools`; use `npm.cmd` no PowerShell se scripts `.ps1` estiverem bloqueados.
+O Docker Desktop foi iniciado nesta máquina e a stack Compose está ativa em `http://localhost:8080`; banco e API passaram seus healthchecks. As migrations já estavam aplicadas. `/api/saude` respondeu `disponivel`, o login foi validado e os endpoints geográficos responderam com sucesso. Os SDKs .NET 10.0.403 e Node.js 24.22.1/npm 11.19.1 estão preparados fora do repositório em `%LOCALAPPDATA%\FogoTools`; use `npm.cmd` no PowerShell se scripts `.ps1` estiverem bloqueados.
 
 ## Próximas verificações
 
-1. Disponibilizar o Docker Engine sem remover ou recriar volumes existentes e validar `docker compose up --build`.
-2. Confirmar aplicação das migrations em PostgreSQL, provisionar uma conta por canal local e verificar login, refresh, revogação e operações.
-3. Testar mapa combinado, WebSocket e atualização de telas no navegador contra a stack integrada.
+1. Cadastrar equipamentos e agentes com coordenadas reais/autorizadas e validar os respectivos marcadores no mapa.
+2. Testar mapa combinado, WebSocket e atualização de telas no navegador contra a stack integrada.
+3. Revisar permissões e segurança antes de qualquer distribuição ou exposição fora do ambiente local.
 4. Revisar permissões e segurança antes de qualquer distribuição ou exposição fora do ambiente local.
 5. Só então avaliar integrações autorizadas ou escopo de previsão com fontes e histórico adequados.
 
 ## Validação registrada
 
-A configuração do Compose passou em `docker compose config --quiet`, que verifica os arquivos sem iniciar containers. A API compilou, 65 testes passaram, o frontend compilou e `npm audit` reportou zero vulnerabilidades. O Entity Framework não detectou alterações do modelo sem migration. A execução de `git diff --check` também passou. Esses resultados não substituem testes integrados.
+O Compose foi configurado, construído e executado; banco e API ficaram saudáveis, o frontend ficou em execução, `/api/saude` retornou `disponivel`, endpoints geográficos responderam HTTP 200 e o login foi validado em navegador. A API compilou, 65 testes passaram e o frontend compilou. Esses resultados não substituem a inspeção de marcadores com dados georreferenciados.
 
-Essas verificações não equivalem a teste de integração com PostgreSQL, teste de sessão bem-sucedida, inspeção visual em navegador ou teste de entrega SignalR a clientes conectados. O Docker Engine indisponível impede essas verificações neste ambiente.
+O fluxo de login, o mapa interativo e a comunicação com a API foram verificados em navegador. Ainda falta validar marcadores e atualização SignalR usando registros georreferenciados persistidos; nenhum dado fictício foi inserido para demonstração.
 
 ## Decisões de escopo
 

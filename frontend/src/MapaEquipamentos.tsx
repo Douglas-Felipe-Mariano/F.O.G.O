@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
-import { LatLngBounds } from 'leaflet';
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
+import { divIcon, LatLngBounds } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './MapaEquipamentos.css';
+import './MapaMarcadores.css';
 
 export type LocalizacaoEquipamento = {
   id: string;
@@ -47,6 +48,27 @@ const corSituacao: Record<string, string> = {
   desativado: '#87928c',
   furtado: '#ef7d7d',
 };
+const iconeEquipamentoSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5 12 3l4 2.5v3l3 1.7v8.3H5v-8.3l3-1.7v-3Z"/><path d="M9 8h6M9 13h6M9 16h2m3 0h1"/></svg>';
+const iconeAgenteSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.4-4 2.6-6 6.5-6s6.1 2 6.5 6H5.5Z"/></svg>';
+
+function criarIconeEquipamento(situacao: string) {
+  const classeSituacao = corSituacao[situacao] ? ` situacao-${situacao}` : '';
+  return divIcon({
+    className: 'icone-leaflet-container',
+    html: `<span class="marcador-mapa marcador-equipamento${classeSituacao}">${iconeEquipamentoSvg}</span>`,
+    iconSize: [36, 44],
+    iconAnchor: [18, 40],
+    popupAnchor: [0, -38],
+  });
+}
+
+const iconeAgente = divIcon({
+  className: 'icone-leaflet-container',
+  html: `<span class="marcador-mapa marcador-agente">${iconeAgenteSvg}</span>`,
+  iconSize: [36, 44],
+  iconAnchor: [18, 40],
+  popupAnchor: [0, -38],
+});
 
 function AjustarEnquadramento({ equipamentos, agentes = [] }: Props) {
   const mapa = useMap();
@@ -82,16 +104,10 @@ export default function MapaEquipamentos({ equipamentos, agentes = [] }: Props) 
         />
         <AjustarEnquadramento equipamentos={equipamentos} agentes={agentes} />
         {equipamentos.map((equipamento) => (
-          <CircleMarker
+          <Marker
             key={equipamento.id}
-            center={[equipamento.latitude, equipamento.longitude]}
-            radius={8}
-            pathOptions={{
-              color: '#101716',
-              weight: 2,
-              fillColor: corSituacao[equipamento.situacao] ?? '#c8c9ee',
-              fillOpacity: 0.95,
-            }}
+            position={[equipamento.latitude, equipamento.longitude]}
+            icon={criarIconeEquipamento(equipamento.situacao)}
           >
             <Popup>
               <div className="popup-equipamento">
@@ -102,14 +118,13 @@ export default function MapaEquipamentos({ equipamentos, agentes = [] }: Props) 
                 <span>{equipamento.bairro}, {equipamento.cidade}/{equipamento.uf}</span>
               </div>
             </Popup>
-          </CircleMarker>
+          </Marker>
         ))}
         {agentes.map((agente) => (
-          <CircleMarker
+          <Marker
             key={`agente-${agente.id}`}
-            center={[agente.latitude, agente.longitude]}
-            radius={7}
-            pathOptions={{ color: '#101716', weight: 2, fillColor: '#86b8ff', fillOpacity: 0.95 }}
+            position={[agente.latitude, agente.longitude]}
+            icon={iconeAgente}
           >
             <Popup>
               <div className="popup-equipamento">
@@ -119,7 +134,7 @@ export default function MapaEquipamentos({ equipamentos, agentes = [] }: Props) 
                 <span>{agente.baseOperacional}</span>
               </div>
             </Popup>
-          </CircleMarker>
+          </Marker>
         ))}
       </MapContainer>
     </div>

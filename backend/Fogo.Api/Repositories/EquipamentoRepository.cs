@@ -37,11 +37,13 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
 
     public async Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(
         FiltrosMapaEquipamentos filtros,
+        int deslocamento,
         int limite,
         CancellationToken cancelamento) =>
         await AplicarFiltrosMapa(banco.Equipamentos.AsNoTracking(), filtros)
             .Where(item => item.Latitude != null && item.Longitude != null)
             .OrderBy(item => item.Id)
+            .Skip(deslocamento)
             .Take(limite)
             .ToArrayAsync(cancelamento);
 

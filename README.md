@@ -6,9 +6,9 @@ Ferramenta Onisciente de Gestão e Operações — etapa bônus do desafio da Ds
 
 O F.O.G.O. reúne um inventário de equipamentos, um quadro de agentes e um mapa operacional. A aplicação oferece autenticação, cadastro e consulta de registros, filtros, indicadores e atualização de telas via SignalR. O quadro de manutenção exibe equipamentos marcados para manutenção; não calcula prioridade nem prevê falhas. As decisões, limites e validações conhecidas estão em [docs/arquitetura.md](docs/arquitetura.md).
 
-**Estado em 26/10/2026:** inventário de equipamentos, cadastro de agentes, mapa combinado e notificações SignalR estão implementados. O módulo preditivo não está disponível. Os builds e testes automatizados podem ser executados localmente; a validação com PostgreSQL e a stack completa segue bloqueada porque o Docker Engine não está acessível neste ambiente.
+**Estado em 26/10/2026:** inventário, cadastro de agentes, mapa combinado e notificações SignalR estão implementados. Após autenticar, o mapa operacional é a primeira visão e reúne todos os equipamentos e agentes que tenham coordenadas, com ícones próprios. A stack Compose com PostgreSQL foi iniciada e validada; a base atual ainda não possui registros georreferenciados, então não há marcadores. O módulo preditivo não está disponível.
 
-Nesta máquina, os SDKs .NET 10.0.403 e Node.js 24.22.1/npm 11.19.1 estão em diretório local do usuário, fora do repositório. No PowerShell, pode ser necessário incluir `%LOCALAPPDATA%\FogoTools\dotnet` e `%LOCALAPPDATA%\FogoTools\node-v24.22.1-win-x64` no `PATH`; use `npm.cmd` se a política local bloquear scripts `.ps1`. O Docker CLI está instalado, mas o daemon do Docker Desktop não está acessível. PostgreSQL não foi validado em runtime.
+Nesta máquina, os SDKs .NET 10.0.403 e Node.js 24.22.1/npm 11.19.1 estão em diretório local do usuário, fora do repositório. No PowerShell, pode ser necessário incluir `%LOCALAPPDATA%\FogoTools\dotnet` e `%LOCALAPPDATA%\FogoTools\node-v24.22.1-win-x64` no `PATH`; use `npm.cmd` se a política local bloquear scripts `.ps1`. O Docker Desktop foi iniciado; a stack e o PostgreSQL foram validados em runtime.
 
 No desenvolvimento, o Vite encaminha `/api` para `https://localhost:7001`. Se o perfil local da API usar outra porta, defina `FOGO_API_URL` antes de iniciar o frontend. O navegador precisa confiar no certificado HTTPS de desenvolvimento da API.
 
@@ -58,8 +58,8 @@ Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o 
 - `npm install` em `frontend/`: passou, 0 vulnerabilidades reportadas.
 - `npm run build` em `frontend/`: passou (TypeScript e Vite).
 - `npm audit` em `frontend/`: nenhum pacote vulnerável reportado.
-- Docker Compose: configuração validada com `docker compose config --quiet`; inicialização não validada porque o Docker Engine não está acessível neste ambiente.
-- `frontend/`: mapa Leaflet construído para exibir localizações retornadas pela API; tiles OpenStreetMap exigem internet e a experiência visual integrada ainda precisa de validação com uma sessão e banco reais.
+- Docker Compose: stack iniciada com `docker compose up -d --build`; banco e API saudáveis, frontend em execução. `/api/saude` respondeu `disponivel`, os endpoints de localizações responderam HTTP 200 e o portal foi aberto em `http://localhost:8080`.
+- `frontend/`: mapa Leaflet é a primeira visão após autenticação, usa ícones distintos para equipamento e agente e pagina a consulta para carregar todos os registros com coordenadas. Tiles OpenStreetMap exigem internet. A validação visual integrada passou; não há pontos georreferenciados cadastrados no banco atual.
 - SignalR: evento `equipamentoAlterado` após criação/atualização persistida; clientes autenticados recarregam inventário/indicadores e o mapa aberto. A entrega é transitória (sem outbox), portanto a reconexão também recarrega dados pela API.
 - Auditoria NuGet dos projetos API e testes: nenhum pacote vulnerável reportado.
 - PostgreSQL continua sem validação neste ambiente; migrations e `CREATE.sql` não foram aplicados em uma instância real.

@@ -5,6 +5,7 @@ import MapaEquipamentos, { LocalizacaoAgente, LocalizacaoEquipamento } from './M
 import './App.css';
 import './Visoes.css';
 import './FilaManutencao.css';
+import './MapaInicio.css';
 
 type SituacaoEquipamento = 'aindaNaoInstalado' | 'operacional' | 'mauFuncionamento' | 'emManutencao' | 'desativado' | 'furtado';
 type TipoManutencao = 'imediata' | 'agendada' | 'periodica';
@@ -40,8 +41,10 @@ type RespostaToken = { tokenAcesso: string; expiraEm: string };
 type EventoEquipamentoAlterado = { equipamentoId: string; operacao: 'criado' | 'atualizado'; atualizadoEm: string };
 
 type Filtros = { tipo: string; situacao: string; bairro: string };
-type RespostaMapa = { totalComCoordenadas: number; limite: number; resultadoTruncado: boolean; itens: LocalizacaoEquipamento[] };
-type RespostaMapaAgentes = { totalComCoordenadas: number; limite: number; resultadoTruncado: boolean; itens: LocalizacaoAgente[] };
+type RespostaMapaBase<T> = { totalComCoordenadas: number; limite: number; resultadoTruncado: boolean; itens: T[] };
+type RespostaMapa = RespostaMapaBase<LocalizacaoEquipamento>;
+type RespostaMapaAgentes = RespostaMapaBase<LocalizacaoAgente>;
+const tamanhoLoteMapa = 1000;
 
 const estados: { valor: SituacaoEquipamento; rotulo: string }[] = [
   { valor: 'aindaNaoInstalado', rotulo: 'Ainda não instalado' },
@@ -73,7 +76,7 @@ function App() {
   const [mapaAgentes, setMapaAgentes] = useState<RespostaMapaAgentes | null>(null);
   const [carregandoMapa, setCarregandoMapa] = useState(false);
   const [statusTempoReal, setStatusTempoReal] = useState<'conectando' | 'conectado' | 'reconectando' | 'desconectado'>('desconectado');
-  const [visao, setVisao] = useState<'inventario' | 'mapa' | 'agentes'>('inventario');
+  const [visao, setVisao] = useState<'inventario' | 'mapa' | 'agentes'>('mapa');
   const [revisaoAgentes, setRevisaoAgentes] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [total, setTotal] = useState(0);
@@ -132,31 +135,58 @@ function App() {
     }
   }, [chamarApi, pagina, pesquisa, pesquisaManutencao, token]);
 
-  const carregarMapa = useCallback(async (limite = 500) => {
+  const carregarTodasLocalizacoes = useCallback(async <T,>(
+    rota: string,
+    filtrosRota: URLSearchParams,
+  ): Promise<RespostaMapaBase<T>> => {
+    const consultarPagina = async (deslocamento: number) => {
+      const parametros = new URLSearchParams(filtrosRota);
+      parametros.set('limite', String(tamanhoLoteMapa));
+      parametros.set('deslocamento', String(deslocamento));
+      const resposta = await chamarApi(`${rota}?${parametros}`);
+      return await resposta.json() as RespostaMapaBase<T>;
+    };
+
+    const primeiraPagina = await consultarPagina(0);
+    const deslocamentos: number[] = [];
+    for (let deslocamento = tamanhoLoteMapa; deslocamento < primeiraPagina.totalComCoordenadas; deslocamento += tamanhoLoteMapa) {
+      deslocamentos.push(deslocamento);
+    }
+
+    const itens = [...primeiraPagina.itens];
+    for (let indice = 0; indice < deslocamentos.length; indice += 4) {
+      const paginas = await Promise.all(deslocamentos.slice(indice, indice + 4).map(consultarPagina));
+      itens.push(...paginas.flatMap((pagina) => pagina.itens));
+    }
+
+    return {
+      ...primeiraPagina,
+      itens,
+      resultadoTruncado: itens.length < primeiraPagina.totalComCoordenadas,
+    };
+  }, [chamarApi]);
+
+  const carregarMapa = useCallback(async () => {
     if (!token) return;
     setCarregandoMapa(true);
     setErro('');
     try {
-      const parametros = new URLSearchParams({ limite: String(limite) });
+      const parametros = new URLSearchParams();
       if (pesquisaMapa.tipo) parametros.set('tipo', pesquisaMapa.tipo);
       if (pesquisaMapa.situacao) parametros.set('situacao', pesquisaMapa.situacao);
       if (pesquisaMapa.bairro) parametros.set('bairro', pesquisaMapa.bairro);
       const [respostaEquipamentos, respostaAgentes] = await Promise.all([
-        chamarApi(`/api/equipamentos/localizacoes?${parametros}`),
-        chamarApi('/api/agentes/localizacoes?limite=1000'),
+        carregarTodasLocalizacoes<LocalizacaoEquipamento>('/api/equipamentos/localizacoes', parametros),
+        carregarTodasLocalizacoes<LocalizacaoAgente>('/api/agentes/localizacoes', new URLSearchParams()),
       ]);
-      const [localizacoesEquipamentos, localizacoesAgentes] = await Promise.all([
-        respostaEquipamentos.json() as Promise<RespostaMapa>,
-        respostaAgentes.json() as Promise<RespostaMapaAgentes>,
-      ]);
-      setMapa(localizacoesEquipamentos);
-      setMapaAgentes(localizacoesAgentes);
+      setMapa(respostaEquipamentos);
+      setMapaAgentes(respostaAgentes);
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar as localizações.');
     } finally {
       setCarregandoMapa(false);
     }
-  }, [chamarApi, pesquisaMapa, token]);
+  }, [carregarTodasLocalizacoes, pesquisaMapa, token]);
 
   const atualizacaoTempoReal = useRef({ carregarDados, carregarMapa, visao });
   useEffect(() => {
@@ -373,12 +403,12 @@ function App() {
           </form>
         </section>
       ) : (
-        <section className="workspace" id="inicio">
-          <div className="workspace-heading">
+        <section className={`workspace ${visao === 'mapa' ? 'workspace-map' : ''}`} id="inicio">
+          <div className={`workspace-heading ${visao === 'mapa' ? 'workspace-heading-map' : ''}`}>
             <div>
-              <p className="eyebrow"><span>INVENTÁRIO</span> · DADOS PERSISTIDOS</p>
-              <h1>Visão operacional<span className="heading-period">.</span></h1>
-              <p className="intro">Consulte e mantenha os equipamentos cadastrados. Indicadores refletem registros persistidos; não há dados de demonstração.</p>
+              <p className="eyebrow"><span>{visao === 'mapa' ? 'MAPA OPERACIONAL' : 'INVENTÁRIO'}</span> · DADOS PERSISTIDOS</p>
+              <h1>{visao === 'mapa' ? <>Mapa geográfico<span className="heading-period">.</span></> : <>Visão operacional<span className="heading-period">.</span></>}</h1>
+              {visao !== 'mapa' && <p className="intro">Consulte e mantenha os equipamentos cadastrados. Indicadores refletem registros persistidos; não há dados de demonstração.</p>}
             </div>
             <button className="button button-primary create-button" onClick={abrirNovo}>＋ Novo equipamento</button>
           </div>
@@ -386,15 +416,15 @@ function App() {
           {erro && <p className="alert error" role="alert">{erro}</p>}
           {mensagem && <p className="alert success" role="status">{mensagem}</p>}
 
-          <div className="metric-grid">
+          {visao !== 'mapa' && <div className="metric-grid">
             <article className="metric-card"><span className="metric-label">EQUIPAMENTOS CADASTRADOS</span><strong>{indicadores?.totalCadastrado ?? '—'}</strong><small>total persistido</small></article>
             <article className="metric-card"><span className="metric-label">OPERACIONAIS</span><strong>{indicadores?.porSituacao.find((item) => item.situacao === 'operacional')?.quantidade ?? 0}</strong><small>situação declarada</small></article>
             <article className="metric-card"><span className="metric-label">NECESSITAM MANUTENÇÃO</span><strong>{indicadores?.necessitamManutencao ?? '—'}</strong><small>conforme cadastro</small><button type="button" className="maintenance-shortcut" onClick={abrirFilaManutencao}>Abrir fila →</button></article>
-          </div>
+          </div>}
 
           <nav className="view-tabs" aria-label="Visões do inventário">
-            <button type="button" aria-pressed={visao === 'inventario'} className={visao === 'inventario' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('inventario')}>Equipamentos</button>
             <button type="button" aria-pressed={visao === 'mapa'} className={visao === 'mapa' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('mapa')}>Mapa operacional</button>
+            <button type="button" aria-pressed={visao === 'inventario'} className={visao === 'inventario' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('inventario')}>Equipamentos</button>
             <button type="button" aria-pressed={visao === 'agentes'} className={visao === 'agentes' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('agentes')}>Agentes</button>
           </nav>
 
@@ -429,11 +459,14 @@ function App() {
           </section> : visao === 'mapa' ? <section className="painel-mapa" aria-labelledby="mapa-title">
             <div className="mapa-cabecalho">
               <div>
-                <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA</p>
-                <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes)</span></h2>
-                <p className="mapa-descricao">Exibe equipamentos e agentes com coordenadas persistidas. Marcadores verdes representam equipamentos; azuis, agentes. A situação da equipe é informada manualmente.</p>
+                <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA · TODOS OS REGISTROS COM COORDENADAS</p>
+                <h2 id="mapa-title">Mapa de equipamentos e agentes <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes)</span></h2>
+                <p className="mapa-descricao">Mapa interativo com dados persistidos. Os ícones identificam equipamentos e agentes; selecione um marcador para ver os detalhes.</p>
               </div>
-              <button className="button button-quiet" onClick={() => void carregarMapa()} disabled={carregandoMapa}>↻ Atualizar mapa</button>
+              <div className="mapa-acoes">
+                <div className="mapa-legenda" aria-label="Legenda do mapa"><span><i className="legenda-equipamento" />Equipamentos</span><span><i className="legenda-agente" />Agentes</span></div>
+                <button className="button button-quiet" onClick={() => void carregarMapa()} disabled={carregandoMapa}>↻ Atualizar mapa</button>
+              </div>
             </div>
             <form className="filters map-filters" onSubmit={(evento) => { evento.preventDefault(); setPesquisaMapa(filtrosMapa); }}>
               <label>Tipo<input placeholder="Ex.: radar" value={filtrosMapa.tipo} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, tipo: evento.target.value })} /></label>
@@ -444,14 +477,16 @@ function App() {
             </form>
             {mapa?.resultadoTruncado && <div className="mapa-alerta" role="status">
               <span>Exibindo {mapa.itens.length} de {mapa.totalComCoordenadas} equipamentos com coordenadas.</span>
-              {mapa.limite < 1000
-                ? <button className="button button-secondary" onClick={() => void carregarMapa(1000)} disabled={carregandoMapa}>Carregar até 1.000 pontos</button>
-                : <span>O limite máximo desta consulta foi atingido.</span>}
+              <span>Atualize o mapa para buscar novamente todos os registros.</span>
             </div>}
-            {mapaAgentes?.resultadoTruncado && <div className="mapa-alerta" role="status"><span>Exibindo até {mapaAgentes.limite} agentes com coordenadas. Existem mais registros que não aparecem nesta consulta.</span></div>}
-            {carregandoMapa ? <div className="mapa-vazio"><strong>Carregando localizações…</strong><span>Consultando registros persistidos.</span></div> : mapa?.itens.length || mapaAgentes?.itens.length ? <MapaEquipamentos equipamentos={mapa?.itens ?? []} agentes={mapaAgentes?.itens ?? []} /> : (
-              <div className="mapa-vazio"><strong>Nenhuma localização cadastrada</strong><span>O mapa mostra registros persistidos que tenham latitude e longitude; nenhum marcador demonstrativo foi criado.</span></div>
-            )}
+            {mapaAgentes?.resultadoTruncado && <div className="mapa-alerta" role="status"><span>Alguns agentes não foram carregados. Atualize o mapa para tentar novamente.</span></div>}
+            <div className="mapa-conteudo">
+              <MapaEquipamentos equipamentos={mapa?.itens ?? []} agentes={mapaAgentes?.itens ?? []} />
+              {carregandoMapa && <div className="mapa-mensagem-overlay"><strong>Carregando localizações…</strong><span>Consultando os registros persistidos.</span></div>}
+              {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && (
+                <div className="mapa-mensagem-overlay"><strong>Nenhum ponto georreferenciado ainda</strong><span>O mapa exibirá equipamentos e agentes assim que houver latitude e longitude cadastradas.</span></div>
+              )}
+            </div>
           </section> : <AgentesView token={token} revisao={revisaoAgentes} />}
         </section>
       )}

@@ -109,14 +109,15 @@ public sealed class AgenteServiceTests
     [Fact]
     public async Task ListarLocalizacoesAsync_RespeitaLimiteEIndicaTruncamento()
     {
-        var agentes = new[] { CriarAgente(), CriarAgente() };
+        var agentes = new[] { CriarAgente(), CriarAgente(), CriarAgente() };
         var repositorio = new RepositorioAgentesFalso { TotalLocalizacoes = 4, Localizacoes = agentes };
         var servico = new AgenteService(repositorio, TimeProvider.System);
 
-        var mapa = await servico.ListarLocalizacoesAsync(2, CancellationToken.None);
+        var mapa = await servico.ListarLocalizacoesAsync(1, 2, CancellationToken.None);
 
         Assert.Equal(4, mapa.TotalComCoordenadas);
         Assert.Equal(2, mapa.Limite);
+        Assert.Equal(1, repositorio.DeslocamentoLocalizacoes);
         Assert.True(mapa.ResultadoTruncado);
         Assert.Equal(2, mapa.Itens.Count);
         Assert.Equal(agentes[0].Nome, mapa.Itens.First().Nome);
@@ -148,6 +149,7 @@ public sealed class AgenteServiceTests
         public IReadOnlyCollection<Agente> Itens { get; init; } = [];
         public IReadOnlyCollection<ContagemSituacaoAgente> Contagens { get; init; } = [];
         public int TotalLocalizacoes { get; init; }
+        public int DeslocamentoLocalizacoes { get; private set; }
         public IReadOnlyCollection<Agente> Localizacoes { get; init; } = [];
         public FiltrosAgentes? Filtros { get; private set; }
         public Agente? AgenteAdicionado { get; private set; }
@@ -169,8 +171,11 @@ public sealed class AgenteServiceTests
         public Task<Agente?> ConsultarAsync(Guid id, CancellationToken cancelamento) => Task.FromResult(AgenteParaAtualizacao);
         public Task<Agente?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento) => Task.FromResult(AgenteParaAtualizacao);
         public Task<int> ContarComCoordenadasAsync(CancellationToken cancelamento) => Task.FromResult(TotalLocalizacoes);
-        public Task<IReadOnlyCollection<Agente>> ListarComCoordenadasAsync(int limite, CancellationToken cancelamento) =>
-            Task.FromResult<IReadOnlyCollection<Agente>>(Localizacoes.Take(limite).ToArray());
+        public Task<IReadOnlyCollection<Agente>> ListarComCoordenadasAsync(int deslocamento, int limite, CancellationToken cancelamento)
+        {
+            DeslocamentoLocalizacoes = deslocamento;
+            return Task.FromResult<IReadOnlyCollection<Agente>>(Localizacoes.Skip(deslocamento).Take(limite).ToArray());
+        }
         public Task<IReadOnlyCollection<ContagemSituacaoAgente>> ContarPorSituacaoAsync(CancellationToken cancelamento) => Task.FromResult(Contagens);
 
         public Task AdicionarAsync(Agente agente, CancellationToken cancelamento)

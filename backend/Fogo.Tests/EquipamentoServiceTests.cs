@@ -97,12 +97,13 @@ public sealed class EquipamentoServiceTests
         var repositorio = new RepositorioMapaFalso();
         var servico = new EquipamentoService(repositorio, TimeProvider.System);
 
-        var resposta = await servico.ListarLocalizacoesAsync(filtros, 2, CancellationToken.None);
+        var resposta = await servico.ListarLocalizacoesAsync(filtros, 1, 2, CancellationToken.None);
 
         Assert.Equal(filtros, repositorio.FiltrosContagem);
         Assert.Equal(filtros, repositorio.FiltrosListagem);
+        Assert.Equal(1, repositorio.Deslocamento);
         Assert.Equal(2, repositorio.Limite);
-        Assert.Equal(3, resposta.TotalComCoordenadas);
+        Assert.Equal(4, resposta.TotalComCoordenadas);
         Assert.Equal(2, resposta.Limite);
         Assert.True(resposta.ResultadoTruncado);
         Assert.Equal(2, resposta.Itens.Count);
@@ -242,6 +243,7 @@ public sealed class EquipamentoServiceTests
     {
         public FiltrosMapaEquipamentos? FiltrosContagem { get; private set; }
         public FiltrosMapaEquipamentos? FiltrosListagem { get; private set; }
+        public int Deslocamento { get; private set; }
         public int Limite { get; private set; }
         public FiltrosEquipamentos? FiltrosContagemInventario { get; private set; }
         public FiltrosEquipamentos? FiltrosListagemInventario { get; private set; }
@@ -259,22 +261,25 @@ public sealed class EquipamentoServiceTests
         public Task<int> ContarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, CancellationToken cancelamento)
         {
             FiltrosContagem = filtros;
-            return Task.FromResult(3);
+            return Task.FromResult(4);
         }
 
         public Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(
             FiltrosMapaEquipamentos filtros,
+            int deslocamento,
             int limite,
             CancellationToken cancelamento)
         {
             FiltrosListagem = filtros;
+            Deslocamento = deslocamento;
             Limite = limite;
             IReadOnlyCollection<Equipamento> equipamentos =
             [
                 CriarEquipamento("RAD-001", -23.5m, -46.6m),
-                CriarEquipamento("RAD-002", -23.6m, -46.7m)
+                CriarEquipamento("RAD-002", -23.6m, -46.7m),
+                CriarEquipamento("RAD-003", -23.7m, -46.8m)
             ];
-            return Task.FromResult(equipamentos);
+            return Task.FromResult<IReadOnlyCollection<Equipamento>>(equipamentos.Skip(deslocamento).Take(limite).ToArray());
         }
 
         public Task<int> ContarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento)

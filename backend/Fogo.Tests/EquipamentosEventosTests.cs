@@ -198,6 +198,7 @@ public sealed class EquipamentosEventosTests : IClassFixture<ConfiguracaoFogoWeb
 
         public Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(
             FiltrosMapaEquipamentos filtros,
+            int deslocamento,
             int limite,
             CancellationToken cancelamento) =>
             Task.FromResult<IReadOnlyCollection<Equipamento>>([]);
