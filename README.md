@@ -6,7 +6,7 @@ Ferramenta Onisciente de Gestão e Operações — etapa bônus do desafio da Ds
 
 O F.O.G.O. reúne um inventário de equipamentos, um quadro de agentes e um mapa operacional. A aplicação oferece autenticação, cadastro e consulta de registros, filtros, indicadores e atualização de telas via SignalR. O quadro de manutenção exibe equipamentos marcados para manutenção; não calcula prioridade nem prevê falhas. As decisões, limites e validações conhecidas estão em [docs/arquitetura.md](docs/arquitetura.md).
 
-**Estado em 26/10/2026:** inventário, cadastro de agentes, mapa combinado e notificações SignalR estão implementados. Após autenticar, o mapa operacional é a primeira visão e reúne todos os equipamentos e agentes que tenham coordenadas, com ícones próprios. A stack Compose com PostgreSQL foi iniciada e validada; a base atual ainda não possui registros georreferenciados, então não há marcadores. O módulo preditivo não está disponível.
+**Estado em 26/10/2026:** inventário, cadastro de agentes, mapa combinado e notificações SignalR estão implementados. Após autenticar, o mapa operacional é a primeira visão, solicita permissão para centralizar na localização do navegador e reúne equipamentos e agentes georreferenciados. Uma consulta autenticada à API pública Overpass pode exibir objetos `highway=speed_camera` do OpenStreetMap; disponibilidade e precisão dependem da fonte colaborativa e da rede, e cada ponto tem link para o objeto original. A migration de demonstração inclui quatro agentes e três radares ilustrativos em Tupã e região, todos marcados como simulados — não representam pessoas ou radares confirmados. O módulo preditivo não está disponível.
 
 Nesta máquina, os SDKs .NET 10.0.403 e Node.js 24.22.1/npm 11.19.1 estão em diretório local do usuário, fora do repositório. No PowerShell, pode ser necessário incluir `%LOCALAPPDATA%\FogoTools\dotnet` e `%LOCALAPPDATA%\FogoTools\node-v24.22.1-win-x64` no `PATH`; use `npm.cmd` se a política local bloquear scripts `.ps1`. O Docker Desktop foi iniciado; a stack e o PostgreSQL foram validados em runtime.
 
@@ -16,8 +16,8 @@ No desenvolvimento, o Vite encaminha `/api` para `https://localhost:7001`. Se o 
 
 - Backend: ASP.NET Core Web API com C#.
 - Frontend: React, TypeScript e Vite.
-- Persistência: PostgreSQL com Entity Framework Core e migrations; PostgreSQL ainda precisa ser provisionado no ambiente.
-- Mapa inicial: Leaflet e tiles OpenStreetMap; exibe somente coordenadas cadastradas, requer conexão externa para os tiles e mantém atribuição aos contribuidores.
+- Persistência: PostgreSQL com Entity Framework Core e migrations; o Compose local mantém os dados no volume `dados_postgres`.
+- Mapa inicial: Leaflet e tiles OpenStreetMap; mostra pontos cadastrados, dados demonstrativos rotulados e, quando disponível, radares mapeados no OpenStreetMap. Mantém atribuição e link à fonte; a geolocalização do navegador exige autorização e não é enviada nem persistida.
 - Autenticação: ASP.NET Core Identity, JWT de acesso mantido em memória, refresh token rotativo persistido somente como hash em cookie `HttpOnly` e proteção CSRF. A primeira conta é criada pelo comando interativo; nenhuma credencial de teste padrão é semeada.
 - Agentes: cadastro/edição e consulta paginada, filtros por categoria e situação informada, indicadores simples e inclusão de pontos com coordenadas no mapa. A situação é manual; não existe rastreamento em tempo real da equipe.
 
@@ -27,7 +27,7 @@ No backend, o inventário está organizado em Controllers (HTTP), Application (v
 
 Com Docker Desktop/Engine e Docker Compose instalados, copie `.env.example` para `.env` e substitua `POSTGRES_PASSWORD` por um segredo aleatório URL-safe e `FOGO_JWT_KEY` por uma chave aleatória com pelo menos 32 bytes. Não compartilhe nem versione `.env`. Na raiz do projeto, execute `docker compose up --build` e abra `http://localhost:8080`.
 
-O Compose inicia PostgreSQL, API e frontend; somente o frontend é publicado na porta local 8080. A configuração local permite acessar por `http://localhost:8080` ou `http://127.0.0.1:8080`; os dois endereços são origens diferentes e ambos estão na allow-list CORS. Se mudar `FOGO_ORIGINS` com a API já em execução, aplique a configuração com `docker compose up -d api` e atualize a página para obter um novo cookie CSRF. O Nginx encaminha `/api` à API pela rede privada do Compose. O volume `dados_postgres` preserva os dados entre reinicializações. A API aguarda o healthcheck do banco, aplica as migrations EF ao iniciar e expõe um healthcheck para que o frontend espere sua prontidão. Isso cria/atualiza o esquema, mas **não** insere equipamentos de demonstração nem cria usuários automaticamente.
+O Compose inicia PostgreSQL, API e frontend; somente o frontend é publicado na porta local 8080. A configuração local permite acessar por `http://localhost:8080` ou `http://127.0.0.1:8080`; os dois endereços são origens diferentes e ambos estão na allow-list CORS. Se mudar `FOGO_ORIGINS` com a API já em execução, aplique a configuração com `docker compose up -d api` e atualize a página para obter um novo cookie CSRF. O Nginx encaminha `/api` à API pela rede privada do Compose. O volume `dados_postgres` preserva os dados entre reinicializações. A API aguarda o healthcheck do banco, aplica as migrations EF ao iniciar e expõe um healthcheck para que o frontend espere sua prontidão. A migration `AdicionarDadosDemonstracaoTupa` insere dados ilustrativos marcados como simulados; isso não cria usuários automaticamente.
 
 Depois que a stack estiver pronta, crie a primeira conta de forma interativa com `docker compose exec -it api dotnet Fogo.Api.dll --provisionar-primeiro-usuario`. Para criar contas adicionais, use `docker compose exec -it api dotnet Fogo.Api.dll --provisionar-usuario`. Ambos os comandos pedem e-mail e senha com confirmação; a senha não é exibida nem deve ser colocada em argumentos, `.env` ou logs. O primeiro comando recusa se já houver usuário; o segundo exige acesso ao terminal da máquina/ambiente e ao banco e pode ser usado para contas posteriores. Ambos exigem migrations aplicadas e confirmam o e-mail pelo procedimento local. Não há cadastro público. A aplicação ainda não implementa papéis ou permissões diferenciadas entre usuários autenticados; conceda acesso aos comandos de provisionamento somente a operadores confiáveis.
 
@@ -51,20 +51,20 @@ Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o 
 
 ## Validação executada
 
-- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: 65 testes passaram na última execução; incluem autenticação/autorização básica, inventário, serviços de agentes e limites das localizações. Não substituem integração contra PostgreSQL nem cobrem sessão bem-sucedida completa.
+- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: 68 testes passaram na última execução; incluem autenticação/autorização, inventário, agentes, parsing/cache da consulta OSM e limites das localizações. Não substituem cobertura de uma sessão autenticada completa.
 - `dotnet build backend/Fogo.Api/Fogo.Api.csproj --no-restore`: passou.
 - Migration inicial do Identity e das sessões gerada em `backend/Fogo.Api/Identity/Migrations`; não foi aplicada porque PostgreSQL ainda não está instalado.
 - Migration incremental de equipamentos também gerada. O espelho SQL para leitura da arquitetura do banco está em `backend/database/CREATE.sql` e não contém dados iniciais.
 - `npm install` em `frontend/`: passou, 0 vulnerabilidades reportadas.
 - `npm run build` em `frontend/`: passou (TypeScript e Vite).
 - `npm audit` em `frontend/`: nenhum pacote vulnerável reportado.
-- Docker Compose: stack iniciada com `docker compose up -d --build`; banco e API saudáveis, frontend em execução. `/api/saude` respondeu `disponivel`, os endpoints de localizações responderam HTTP 200 e o portal foi aberto em `http://localhost:8080`.
-- `frontend/`: mapa Leaflet é a primeira visão após autenticação, usa ícones distintos para equipamento e agente e pagina a consulta para carregar todos os registros com coordenadas. Tiles OpenStreetMap exigem internet. A validação visual integrada passou; não há pontos georreferenciados cadastrados no banco atual.
+- Docker Compose: stack reconstruída com `docker compose up -d --build`; PostgreSQL e API saudáveis, frontend em execução. A migration inseriu quatro agentes e três radares demonstrativos marcados como simulados. `/api/saude` respondeu `disponivel` e o portal respondeu HTTP 200 em `http://localhost:8080`.
+- `frontend/`: mapa Leaflet é a primeira visão após autenticação, usa ícones distintos para equipamento e agente, pagina a consulta e exibe origem simulada. A localização do usuário depende de autorização do navegador e permanece na sessão; a consulta de radares Overpass é opcional e não foi possível confirmar resultados reais da região durante a validação (indisponibilidade externa). Tiles OpenStreetMap exigem internet.
 - SignalR: evento `equipamentoAlterado` após criação/atualização persistida; clientes autenticados recarregam inventário/indicadores e o mapa aberto. A entrega é transitória (sem outbox), portanto a reconexão também recarrega dados pela API.
 - Auditoria NuGet dos projetos API e testes: nenhum pacote vulnerável reportado.
-- PostgreSQL continua sem validação neste ambiente; migrations e `CREATE.sql` não foram aplicados em uma instância real.
+- PostgreSQL Compose e aplicação automática das migrations foram validados nesta execução. `backend/database/CREATE.sql` continua sendo apenas o espelho SQL de referência, não foi aplicado diretamente.
 
-Nenhuma integração ou previsão será apresentada como funcional sem validação. Dados demonstrativos, caso sejam adicionados, deverão estar claramente identificados como simulados.
+Os testes do serviço OSM usam respostas simuladas; a disponibilidade de radares reais depende da Overpass API e não foi confirmada na região. Os dados adicionados pela migration são explicitamente demonstrativos, não oficiais.
 
 ## Uso de IA
 

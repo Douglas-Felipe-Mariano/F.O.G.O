@@ -158,7 +158,7 @@ export default function AgentesView({ token, revisao }: { token: string; revisao
           <button className="button button-quiet" type="button" onClick={() => void carregar()} disabled={carregando}>↻ Atualizar</button>
         </form>
         {carregando ? <div className="empty-state">Atualizando o quadro…</div> : dados.itens.length === 0 ? (
-          <div className="empty-state"><span className="empty-icon">⌁</span><h3>{dados.totalRegistros ? 'Nenhum agente nesta página' : 'Nenhum agente cadastrado'}</h3><p>{dados.totalRegistros ? 'Altere os filtros ou navegue para outra página.' : 'Cadastre a equipe para acompanhar a situação operacional informada. Não há dados de demonstração.'}</p>{dados.totalRegistros === 0 && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro agente</button>}</div>
+          <div className="empty-state"><span className="empty-icon">⌁</span><h3>{dados.totalRegistros ? 'Nenhum agente nesta página' : 'Nenhum agente cadastrado'}</h3><p>{dados.totalRegistros ? 'Altere os filtros ou navegue para outra página.' : 'Cadastre a equipe para acompanhar a situação operacional informada. Registros demonstrativos aparecem identificados como simulados.'}</p>{dados.totalRegistros === 0 && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro agente</button>}</div>
         ) : (
           <div className="table-wrap"><table><thead><tr><th>Agente</th><th>Base operacional</th><th>Situação informada</th><th>Origem</th><th><span className="sr-only">Ação</span></th></tr></thead><tbody>
             {dados.itens.map((agente) => <tr key={agente.id}>

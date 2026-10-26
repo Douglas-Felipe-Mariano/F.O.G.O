@@ -133,7 +133,8 @@ public sealed record LocalizacaoEquipamentoResposta(
     string? Referencia,
     decimal Latitude,
     decimal Longitude,
-    SituacaoEquipamento Situacao);
+    SituacaoEquipamento Situacao,
+    OrigemRegistro OrigemDados = OrigemRegistro.Manual);
 
 public sealed record MapaEquipamentosResposta(
     int TotalComCoordenadas,

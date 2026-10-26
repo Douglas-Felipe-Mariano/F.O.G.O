@@ -68,7 +68,8 @@ public sealed record LocalizacaoAgenteResposta(
     string BaseOperacional,
     decimal Latitude,
     decimal Longitude,
-    SituacaoAgente Situacao);
+    SituacaoAgente Situacao,
+    OrigemRegistro OrigemDados = OrigemRegistro.Manual);
 
 public sealed record MapaAgentesResposta(
     int TotalComCoordenadas,

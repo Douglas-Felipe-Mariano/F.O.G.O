@@ -39,7 +39,8 @@ public sealed class AgenteService(IAgenteRepository repositorio, TimeProvider re
             agente.BaseOperacional,
             agente.Latitude!.Value,
             agente.Longitude!.Value,
-            agente.Situacao)).ToArray();
+            agente.Situacao,
+            agente.OrigemDados)).ToArray();
         return new MapaAgentesResposta(total, limite, (long)deslocamento + localizacoes.Length < total, localizacoes);
     }
 

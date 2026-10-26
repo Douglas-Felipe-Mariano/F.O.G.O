@@ -44,6 +44,8 @@ type Filtros = { tipo: string; situacao: string; bairro: string };
 type RespostaMapaBase<T> = { totalComCoordenadas: number; limite: number; resultadoTruncado: boolean; itens: T[] };
 type RespostaMapa = RespostaMapaBase<LocalizacaoEquipamento>;
 type RespostaMapaAgentes = RespostaMapaBase<LocalizacaoAgente>;
+type RespostaRadaresOpenStreetMap = { disponivel: boolean; fonte: string; aviso: string; itens: LocalizacaoEquipamento[] };
+type LocalizacaoUsuario = { latitude: number; longitude: number };
 const tamanhoLoteMapa = 1000;
 
 const estados: { valor: SituacaoEquipamento; rotulo: string }[] = [
@@ -62,6 +64,8 @@ const tiposManutencao: { valor: TipoManutencao; rotulo: string }[] = [
 const situacaoLabel = new Map(estados.map(({ valor, rotulo }) => [valor, rotulo]));
 const origemLabel: Record<OrigemRegistro, string> = { manual: 'Manual', importado: 'Importado', simulado: 'Simulado' };
 const vazioFiltros: Filtros = { tipo: '', situacao: '', bairro: '' };
+const semLocalizacoesEquipamentos: LocalizacaoEquipamento[] = [];
+const semLocalizacoesAgentes: LocalizacaoAgente[] = [];
 const vazioFormulario = (): EquipamentoRequisicao => ({
   tipo: '', numeroSerie: '', marca: '', modelo: '', cep: '', bairro: '', cidade: '', uf: '', rua: '', referencia: '',
   latitude: null, longitude: null, situacao: 'operacional', necessitaManutencao: false,
@@ -74,6 +78,10 @@ function App() {
   const [indicadores, setIndicadores] = useState<Indicadores | null>(null);
   const [mapa, setMapa] = useState<RespostaMapa | null>(null);
   const [mapaAgentes, setMapaAgentes] = useState<RespostaMapaAgentes | null>(null);
+  const [radaresOpenStreetMap, setRadaresOpenStreetMap] = useState<RespostaRadaresOpenStreetMap | null>(null);
+  const [localizacaoUsuario, setLocalizacaoUsuario] = useState<LocalizacaoUsuario | null>(null);
+  const [estadoLocalizacaoUsuario, setEstadoLocalizacaoUsuario] = useState<'aguardando' | 'localizada' | 'negada' | 'indisponivel'>('aguardando');
+  const [enquadramentoMapa, setEnquadramentoMapa] = useState<'usuario' | 'todos'>('usuario');
   const [carregandoMapa, setCarregandoMapa] = useState(false);
   const [statusTempoReal, setStatusTempoReal] = useState<'conectando' | 'conectado' | 'reconectando' | 'desconectado'>('desconectado');
   const [visao, setVisao] = useState<'inventario' | 'mapa' | 'agentes'>('mapa');
@@ -175,12 +183,21 @@ function App() {
       if (pesquisaMapa.tipo) parametros.set('tipo', pesquisaMapa.tipo);
       if (pesquisaMapa.situacao) parametros.set('situacao', pesquisaMapa.situacao);
       if (pesquisaMapa.bairro) parametros.set('bairro', pesquisaMapa.bairro);
-      const [respostaEquipamentos, respostaAgentes] = await Promise.all([
+      const [respostaEquipamentos, respostaAgentes, radaresPublicos] = await Promise.all([
         carregarTodasLocalizacoes<LocalizacaoEquipamento>('/api/equipamentos/localizacoes', parametros),
         carregarTodasLocalizacoes<LocalizacaoAgente>('/api/agentes/localizacoes', new URLSearchParams()),
+        chamarApi('/api/radares/openstreetmap')
+          .then(async (resposta) => await resposta.json() as RespostaRadaresOpenStreetMap)
+          .catch(() => ({
+            disponivel: false,
+            fonte: 'OpenStreetMap / Overpass API',
+            aviso: 'A consulta pública de radares está temporariamente indisponível. Os dados demonstrativos continuam visíveis.',
+            itens: [],
+          })),
       ]);
       setMapa(respostaEquipamentos);
       setMapaAgentes(respostaAgentes);
+      setRadaresOpenStreetMap(radaresPublicos);
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar as localizações.');
     } finally {
@@ -188,12 +205,36 @@ function App() {
     }
   }, [carregarTodasLocalizacoes, pesquisaMapa, token]);
 
+  const solicitarLocalizacaoUsuario = useCallback(() => {
+    if (!navigator.geolocation) {
+      setEstadoLocalizacaoUsuario('indisponivel');
+      return;
+    }
+
+    setEstadoLocalizacaoUsuario('aguardando');
+    navigator.geolocation.getCurrentPosition(
+      (posicao) => {
+        setLocalizacaoUsuario({ latitude: posicao.coords.latitude, longitude: posicao.coords.longitude });
+        setEstadoLocalizacaoUsuario('localizada');
+        setEnquadramentoMapa('usuario');
+      },
+      (falha) => {
+        setEstadoLocalizacaoUsuario(falha.code === falha.PERMISSION_DENIED ? 'negada' : 'indisponivel');
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
+  }, []);
+
   const atualizacaoTempoReal = useRef({ carregarDados, carregarMapa, visao });
   useEffect(() => {
     atualizacaoTempoReal.current = { carregarDados, carregarMapa, visao };
   }, [carregarDados, carregarMapa, visao]);
 
   useEffect(() => { void carregarDados(); }, [carregarDados]);
+
+  useEffect(() => {
+    if (token) solicitarLocalizacaoUsuario();
+  }, [solicitarLocalizacaoUsuario, token]);
 
   useEffect(() => {
     if (visao === 'mapa' && token) void carregarMapa();
@@ -273,6 +314,11 @@ function App() {
   const bairros = useMemo(() => [...new Set(itens.map((item) => item.bairro))].sort(), [itens]);
   const possuiFiltrosInventario = Boolean(pesquisa.tipo || pesquisa.situacao || pesquisa.bairro || pesquisaManutencao);
   const filaSemOutrosFiltros = pesquisaManutencao === 'true' && !pesquisa.tipo && !pesquisa.situacao && !pesquisa.bairro;
+  const equipamentosMapa = useMemo(() => [
+    ...(mapa?.itens ?? semLocalizacoesEquipamentos),
+    ...(radaresOpenStreetMap?.itens ?? semLocalizacoesEquipamentos),
+  ], [mapa?.itens, radaresOpenStreetMap?.itens]);
+  const agentesMapa = mapaAgentes?.itens ?? semLocalizacoesAgentes;
 
   async function entrar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -408,7 +454,7 @@ function App() {
             <div>
               <p className="eyebrow"><span>{visao === 'mapa' ? 'MAPA OPERACIONAL' : 'INVENTÁRIO'}</span> · DADOS PERSISTIDOS</p>
               <h1>{visao === 'mapa' ? <>Mapa geográfico<span className="heading-period">.</span></> : <>Visão operacional<span className="heading-period">.</span></>}</h1>
-              {visao !== 'mapa' && <p className="intro">Consulte e mantenha os equipamentos cadastrados. Indicadores refletem registros persistidos; não há dados de demonstração.</p>}
+              {visao !== 'mapa' && <p className="intro">Consulte e mantenha os equipamentos cadastrados. Indicadores refletem registros persistidos; pontos simulados estão identificados como tal.</p>}
             </div>
             <button className="button button-primary create-button" onClick={abrirNovo}>＋ Novo equipamento</button>
           </div>
@@ -442,7 +488,7 @@ function App() {
               <button className="button button-quiet" type="button" onClick={() => { setFiltros(vazioFiltros); setPesquisa(vazioFiltros); setFiltroManutencao(''); setPesquisaManutencao(''); setPagina(1); }}>Limpar</button>
             </form>
             {carregando ? <div className="empty-state"><span className="spinner" />Carregando dados persistidos…</div> : itens.length === 0 ? (
-              <div className="empty-state"><span className="empty-icon">⌁</span><h3>{total > 0 ? 'Nenhum resultado nesta página' : filaSemOutrosFiltros ? 'Nenhuma manutenção indicada' : possuiFiltrosInventario ? 'Nenhum resultado para os filtros' : 'Nenhum equipamento cadastrado'}</h3><p>{total > 0 ? 'Altere os filtros ou navegue para outra página.' : filaSemOutrosFiltros ? 'Nenhum registro persistido está marcado como necessitando manutenção.' : possuiFiltrosInventario ? 'Revise ou limpe os filtros para consultar outros equipamentos.' : 'O inventário está vazio. Cadastre um equipamento para começar; nenhum dado fictício foi incluído.'}</p>{total === 0 && !possuiFiltrosInventario && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro equipamento</button>}</div>
+              <div className="empty-state"><span className="empty-icon">⌁</span><h3>{total > 0 ? 'Nenhum resultado nesta página' : filaSemOutrosFiltros ? 'Nenhuma manutenção indicada' : possuiFiltrosInventario ? 'Nenhum resultado para os filtros' : 'Nenhum equipamento cadastrado'}</h3><p>{total > 0 ? 'Altere os filtros ou navegue para outra página.' : filaSemOutrosFiltros ? 'Nenhum registro persistido está marcado como necessitando manutenção.' : possuiFiltrosInventario ? 'Revise ou limpe os filtros para consultar outros equipamentos.' : 'O inventário está vazio. Cadastre um equipamento para começar.'}</p>{total === 0 && !possuiFiltrosInventario && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro equipamento</button>}</div>
             ) : (
               <div className="table-wrap"><table><thead><tr><th>Equipamento</th><th>Localização</th><th>Situação</th><th>Manutenção</th><th>Origem</th><th><span className="sr-only">Ação</span></th></tr></thead><tbody>{itens.map((item) => (
                 <tr key={item.id}>
@@ -460,11 +506,17 @@ function App() {
             <div className="mapa-cabecalho">
               <div>
                 <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA · TODOS OS REGISTROS COM COORDENADAS</p>
-                <h2 id="mapa-title">Mapa de equipamentos e agentes <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes)</span></h2>
-                <p className="mapa-descricao">Mapa interativo com dados persistidos. Os ícones identificam equipamentos e agentes; selecione um marcador para ver os detalhes.</p>
+                <h2 id="mapa-title">Mapa de equipamentos e agentes <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes · {radaresOpenStreetMap?.itens.length ?? '—'} radares OSM)</span></h2>
+                <p className="mapa-descricao">Mapa interativo com dados cadastrados e pontos públicos mapeados. A localização do navegador só é usada nesta sessão, após sua autorização.</p>
               </div>
               <div className="mapa-acoes">
                 <div className="mapa-legenda" aria-label="Legenda do mapa"><span><i className="legenda-equipamento" />Equipamentos</span><span><i className="legenda-agente" />Agentes</span></div>
+                <span className="mapa-legenda-fonte">Radares OSM em verde-água · dados simulados são identificados nos marcadores.</span>
+                <span className={`mapa-status-localizacao ${estadoLocalizacaoUsuario === 'localizada' ? 'localizacao-ok' : ''}`}>
+                  {estadoLocalizacaoUsuario === 'localizada' ? 'Você está no mapa' : estadoLocalizacaoUsuario === 'aguardando' ? 'Localizando você…' : estadoLocalizacaoUsuario === 'negada' ? 'Localização não autorizada' : 'Localização indisponível'}
+                </span>
+                <button className="button button-quiet" onClick={() => { setEnquadramentoMapa('todos'); }} disabled={!mapa?.itens.length && !mapaAgentes?.itens.length && !radaresOpenStreetMap?.itens.length}>Enquadrar pontos</button>
+                <button className="button button-quiet" onClick={solicitarLocalizacaoUsuario} disabled={estadoLocalizacaoUsuario === 'aguardando'}>Minha localização</button>
                 <button className="button button-quiet" onClick={() => void carregarMapa()} disabled={carregandoMapa}>↻ Atualizar mapa</button>
               </div>
             </div>
@@ -480,11 +532,17 @@ function App() {
               <span>Atualize o mapa para buscar novamente todos os registros.</span>
             </div>}
             {mapaAgentes?.resultadoTruncado && <div className="mapa-alerta" role="status"><span>Alguns agentes não foram carregados. Atualize o mapa para tentar novamente.</span></div>}
+            {radaresOpenStreetMap && !radaresOpenStreetMap.disponivel && <div className="mapa-alerta mapa-alerta-fonte" role="status">{radaresOpenStreetMap.aviso}</div>}
             <div className="mapa-conteudo">
-              <MapaEquipamentos equipamentos={mapa?.itens ?? []} agentes={mapaAgentes?.itens ?? []} />
+              <MapaEquipamentos
+                equipamentos={equipamentosMapa}
+                agentes={agentesMapa}
+                localizacaoUsuario={localizacaoUsuario}
+                enquadramento={enquadramentoMapa}
+              />
               {carregandoMapa && <div className="mapa-mensagem-overlay"><strong>Carregando localizações…</strong><span>Consultando os registros persistidos.</span></div>}
-              {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && (
-                <div className="mapa-mensagem-overlay"><strong>Nenhum ponto georreferenciado ainda</strong><span>O mapa exibirá equipamentos e agentes assim que houver latitude e longitude cadastradas.</span></div>
+              {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && !radaresOpenStreetMap?.itens.length && (
+                <div className="mapa-mensagem-overlay"><strong>Nenhum ponto georreferenciado ainda</strong><span>Adicione registros com coordenadas para vê-los aqui. Os pontos demonstrativos aparecem identificados como simulados.</span></div>
               )}
             </div>
           </section> : <AgentesView token={token} revisao={revisaoAgentes} />}

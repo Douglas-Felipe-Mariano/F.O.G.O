@@ -57,6 +57,12 @@ builder.Services.AddControllers().AddJsonOptions(opcoes =>
     opcoes.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
 builder.Services.AddSignalR();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<RadarOpenStreetMapService>(cliente =>
+{
+    cliente.Timeout = TimeSpan.FromSeconds(15);
+    cliente.DefaultRequestHeaders.UserAgent.ParseAdd("FOGO-Operations-Map/1.0");
+});
 builder.Services.AddScoped<IEquipamentoRepository, EquipamentoRepository>();
 builder.Services.AddScoped<EquipamentoService>();
 builder.Services.AddScoped<IAgenteRepository, AgenteRepository>();
@@ -104,6 +110,13 @@ app.MapGet("/api/saude", () => Results.Ok(new { estado = "disponivel" }))
     .AllowAnonymous()
     .WithName("ConsultarSaude")
     .WithSummary("Verifica se a API está respondendo.");
+
+app.MapGet("/api/radares/openstreetmap", async (
+        RadarOpenStreetMapService radares,
+        CancellationToken cancelamento) =>
+        Results.Ok(await radares.ConsultarAsync(cancelamento)))
+    .WithName("ConsultarRadaresOpenStreetMap")
+    .WithSummary("Consulta radares mapeados pelo OpenStreetMap na região de Tupã; os registros importados não são gravados no banco.");
 
 app.MapGet("/api/autenticacao/eu", (System.Security.Claims.ClaimsPrincipal usuario) =>
         Results.Ok(new { id = usuario.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value }))

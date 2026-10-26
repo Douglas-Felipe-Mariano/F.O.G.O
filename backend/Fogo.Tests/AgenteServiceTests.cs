@@ -109,7 +109,9 @@ public sealed class AgenteServiceTests
     [Fact]
     public async Task ListarLocalizacoesAsync_RespeitaLimiteEIndicaTruncamento()
     {
-        var agentes = new[] { CriarAgente(), CriarAgente(), CriarAgente() };
+        var agenteSimulado = CriarAgente();
+        agenteSimulado.OrigemDados = OrigemRegistro.Simulado;
+        var agentes = new[] { CriarAgente(), agenteSimulado, CriarAgente() };
         var repositorio = new RepositorioAgentesFalso { TotalLocalizacoes = 4, Localizacoes = agentes };
         var servico = new AgenteService(repositorio, TimeProvider.System);
 
@@ -120,7 +122,8 @@ public sealed class AgenteServiceTests
         Assert.Equal(1, repositorio.DeslocamentoLocalizacoes);
         Assert.True(mapa.ResultadoTruncado);
         Assert.Equal(2, mapa.Itens.Count);
-        Assert.Equal(agentes[0].Nome, mapa.Itens.First().Nome);
+        Assert.Equal(agentes[1].Nome, mapa.Itens.First().Nome);
+        Assert.Equal(OrigemRegistro.Simulado, mapa.Itens.First().OrigemDados);
     }
 
     private static AgenteRequisicao CriarRequisicao() => new(

@@ -41,7 +41,8 @@ public sealed class EquipamentoService(
             equipamento.Referencia,
             equipamento.Latitude!.Value,
             equipamento.Longitude!.Value,
-            equipamento.Situacao)).ToArray();
+            equipamento.Situacao,
+            equipamento.OrigemDados)).ToArray();
 
         return new MapaEquipamentosResposta(total, limite, (long)deslocamento + localizacoes.Length < total, localizacoes);
     }
