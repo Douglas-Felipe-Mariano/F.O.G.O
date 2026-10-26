@@ -43,6 +43,14 @@ public sealed class SaudeApiTests : IClassFixture<ConfiguracaoFogoWebApplication
         Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
     }
 
+    [Fact]
+    public async Task ListarAgentes_SemAutenticacao_RecusaAcesso()
+    {
+        var resposta = await _cliente.GetAsync("/api/agentes");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
     private sealed record RespostaSaude(string Estado);
 }
 
@@ -336,7 +344,7 @@ public sealed class InventarioTests : IClassFixture<ConfiguracaoFogoWebApplicati
 public sealed class ModeloBancoTests
 {
     [Fact]
-    public void Modelo_UsaTabelasEmPortuguesEIncluiEquipamentos()
+    public void Modelo_UsaTabelasEmPortuguesEIncluiEquipamentosEAgentes()
     {
         var opcoes = new DbContextOptionsBuilder<FogoDbContext>()
             .UseNpgsql("Host=localhost;Database=fogo_model_test;Username=test;Password=test")
@@ -351,6 +359,7 @@ public sealed class ModeloBancoTests
         Assert.Contains("perfis_acesso", tabelas);
         Assert.Contains("sessoes_atualizacao", tabelas);
         Assert.Contains("equipamentos", tabelas);
+        Assert.Contains("agentes", tabelas);
         Assert.DoesNotContain("AspNetUsers", tabelas);
     }
 }

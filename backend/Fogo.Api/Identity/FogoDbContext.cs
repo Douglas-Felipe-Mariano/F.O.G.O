@@ -10,6 +10,7 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
 {
     public DbSet<SessaoAtualizacao> SessoesAtualizacao => Set<SessaoAtualizacao>();
     public DbSet<Equipamento> Equipamentos => Set<Equipamento>();
+    public DbSet<Agente> Agentes => Set<Agente>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -142,6 +143,32 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
             entidade.HasIndex(equipamento => equipamento.Tipo);
             entidade.HasIndex(equipamento => equipamento.Situacao);
             entidade.HasIndex(equipamento => equipamento.Bairro);
+        });
+
+        builder.Entity<Agente>(entidade =>
+        {
+            entidade.ToTable("agentes", tabela =>
+            {
+                tabela.HasCheckConstraint(
+                    "CK_agentes_coordenadas_completas",
+                    "(latitude IS NULL AND longitude IS NULL) OR (latitude IS NOT NULL AND longitude IS NOT NULL)");
+                tabela.HasCheckConstraint("CK_agentes_latitude", "latitude IS NULL OR latitude BETWEEN -90 AND 90");
+                tabela.HasCheckConstraint("CK_agentes_longitude", "longitude IS NULL OR longitude BETWEEN -180 AND 180");
+            });
+            entidade.HasKey(agente => agente.Id);
+            entidade.Property(agente => agente.Id).HasColumnName("id");
+            entidade.Property(agente => agente.Nome).HasColumnName("nome").HasMaxLength(160).IsRequired();
+            entidade.Property(agente => agente.CategoriaProfissional).HasColumnName("categoria_profissional").HasMaxLength(120).IsRequired();
+            entidade.Property(agente => agente.BaseOperacional).HasColumnName("base_operacional").HasMaxLength(240).IsRequired();
+            entidade.Property(agente => agente.Latitude).HasColumnName("latitude").HasPrecision(9, 6);
+            entidade.Property(agente => agente.Longitude).HasColumnName("longitude").HasPrecision(9, 6);
+            entidade.Property(agente => agente.Situacao).HasColumnName("situacao").HasConversion<string>().HasMaxLength(30).IsRequired();
+            entidade.Property(agente => agente.OrigemDados).HasColumnName("origem_dados").HasConversion<string>().HasMaxLength(20).IsRequired();
+            entidade.Property(agente => agente.CriadoEm).HasColumnName("criado_em").IsRequired();
+            entidade.Property(agente => agente.AtualizadoEm).HasColumnName("atualizado_em").IsRequired();
+            entidade.HasIndex(agente => agente.CategoriaProfissional);
+            entidade.HasIndex(agente => agente.Situacao);
+            entidade.HasIndex(agente => agente.Nome);
         });
     }
 }

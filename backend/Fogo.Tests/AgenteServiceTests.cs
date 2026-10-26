@@ -1,0 +1,188 @@
+using Fogo.Api.Application.Inventario;
+using Fogo.Api.Inventario;
+using Fogo.Api.Repositories;
+using Xunit;
+
+namespace Fogo.Tests;
+
+public sealed class AgenteServiceTests
+{
+    [Fact]
+    public async Task CriarAsync_RequisicaoValida_NormalizaCamposRegistraHorarioEPersiste()
+    {
+        var agora = new DateTimeOffset(2026, 10, 26, 14, 0, 0, TimeSpan.Zero);
+        var repositorio = new RepositorioAgentesFalso();
+        var servico = new AgenteService(repositorio, new RelogioFalso(agora));
+
+        var resultado = await servico.CriarAsync(CriarRequisicao(), CancellationToken.None);
+
+        Assert.True(resultado.SucessoOperacao);
+        var agente = Assert.IsType<Agente>(repositorio.AgenteAdicionado);
+        Assert.Equal("Ana Silva", agente.Nome);
+        Assert.Equal("Equipe de campo", agente.CategoriaProfissional);
+        Assert.Equal("Base Centro", agente.BaseOperacional);
+        Assert.Equal(agora, agente.CriadoEm);
+        Assert.Equal(agora, agente.AtualizadoEm);
+        Assert.Equal(OrigemRegistro.Manual, agente.OrigemDados);
+        Assert.Equal(agente.Id, resultado.Valor!.Id);
+    }
+
+    [Fact]
+    public async Task CriarAsync_CoordenadaIncompleta_NaoPersiste()
+    {
+        var repositorio = new RepositorioAgentesFalso();
+        var servico = new AgenteService(repositorio, TimeProvider.System);
+
+        var resultado = await servico.CriarAsync(CriarRequisicao() with { Longitude = null }, CancellationToken.None);
+
+        Assert.False(resultado.SucessoOperacao);
+        Assert.Contains(nameof(AgenteRequisicao.Latitude), resultado.Erros.Keys);
+        Assert.Null(repositorio.AgenteAdicionado);
+    }
+
+    [Fact]
+    public async Task CriarAsync_CamposNulos_NaoLancaExcecaoENaoPersiste()
+    {
+        var repositorio = new RepositorioAgentesFalso();
+        var servico = new AgenteService(repositorio, TimeProvider.System);
+        var requisicao = new AgenteRequisicao(null!, null!, null!, null, null, SituacaoAgente.Disponivel, OrigemRegistro.Manual);
+
+        var resultado = await servico.CriarAsync(requisicao, CancellationToken.None);
+
+        Assert.False(resultado.SucessoOperacao);
+        Assert.Contains(nameof(AgenteRequisicao.Nome), resultado.Erros.Keys);
+        Assert.Null(repositorio.AgenteAdicionado);
+    }
+
+    [Fact]
+    public async Task AtualizarAsync_AgenteExistente_PreservaCriacaoEAtualizaDados()
+    {
+        var agente = CriarAgente();
+        var criadoEm = new DateTimeOffset(2026, 10, 20, 8, 0, 0, TimeSpan.Zero);
+        var atualizadoEm = new DateTimeOffset(2026, 10, 26, 14, 0, 0, TimeSpan.Zero);
+        agente.CriadoEm = criadoEm;
+        var repositorio = new RepositorioAgentesFalso { AgenteParaAtualizacao = agente };
+        var servico = new AgenteService(repositorio, new RelogioFalso(atualizadoEm));
+
+        var resultado = await servico.AtualizarAsync(agente.Id, CriarRequisicao() with { Situacao = SituacaoAgente.EmAtendimento }, CancellationToken.None);
+
+        Assert.True(resultado.SucessoOperacao);
+        Assert.True(repositorio.SalvouAlteracoes);
+        Assert.Equal(SituacaoAgente.EmAtendimento, agente.Situacao);
+        Assert.Equal(criadoEm, agente.CriadoEm);
+        Assert.Equal(atualizadoEm, agente.AtualizadoEm);
+    }
+
+    [Fact]
+    public async Task ListarAsync_RetornaPaginacaoEMapeamento()
+    {
+        var agente = CriarAgente();
+        var filtros = new FiltrosAgentes(2, 10, "Equipe de campo", SituacaoAgente.Disponivel);
+        var repositorio = new RepositorioAgentesFalso { Total = 13, Itens = [agente] };
+        var servico = new AgenteService(repositorio, TimeProvider.System);
+
+        var resposta = await servico.ListarAsync(filtros, CancellationToken.None);
+
+        Assert.Equal(2, resposta.Pagina);
+        Assert.Equal(13, resposta.TotalRegistros);
+        Assert.Equal(agente.Id, Assert.Single(resposta.Itens).Id);
+        Assert.Equal(filtros, repositorio.Filtros);
+    }
+
+    [Fact]
+    public async Task ConsultarIndicadoresAsync_SomaContagensInformadas()
+    {
+        IReadOnlyCollection<ContagemSituacaoAgente> contagens =
+        [
+            new(SituacaoAgente.Disponivel, 4),
+            new(SituacaoAgente.EmAtendimento, 2)
+        ];
+        var repositorio = new RepositorioAgentesFalso { Contagens = contagens };
+        var servico = new AgenteService(repositorio, TimeProvider.System);
+
+        var indicadores = await servico.ConsultarIndicadoresAsync(CancellationToken.None);
+
+        Assert.Equal(6, indicadores.TotalCadastrado);
+        Assert.Equal(contagens, indicadores.PorSituacao);
+    }
+
+    [Fact]
+    public async Task ListarLocalizacoesAsync_RespeitaLimiteEIndicaTruncamento()
+    {
+        var agentes = new[] { CriarAgente(), CriarAgente() };
+        var repositorio = new RepositorioAgentesFalso { TotalLocalizacoes = 4, Localizacoes = agentes };
+        var servico = new AgenteService(repositorio, TimeProvider.System);
+
+        var mapa = await servico.ListarLocalizacoesAsync(2, CancellationToken.None);
+
+        Assert.Equal(4, mapa.TotalComCoordenadas);
+        Assert.Equal(2, mapa.Limite);
+        Assert.True(mapa.ResultadoTruncado);
+        Assert.Equal(2, mapa.Itens.Count);
+        Assert.Equal(agentes[0].Nome, mapa.Itens.First().Nome);
+    }
+
+    private static AgenteRequisicao CriarRequisicao() => new(
+        " Ana Silva ", " Equipe de campo ", " Base Centro ", -23.5m, -46.6m,
+        SituacaoAgente.Disponivel, OrigemRegistro.Manual);
+
+    private static Agente CriarAgente() => new()
+    {
+        Nome = "Ana Silva",
+        CategoriaProfissional = "Equipe de campo",
+        BaseOperacional = "Base Centro",
+        Latitude = -23.5m,
+        Longitude = -46.6m,
+        Situacao = SituacaoAgente.Disponivel,
+        OrigemDados = OrigemRegistro.Manual
+    };
+
+    private sealed class RelogioFalso(DateTimeOffset agora) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => agora;
+    }
+
+    private sealed class RepositorioAgentesFalso : IAgenteRepository
+    {
+        public int Total { get; init; }
+        public IReadOnlyCollection<Agente> Itens { get; init; } = [];
+        public IReadOnlyCollection<ContagemSituacaoAgente> Contagens { get; init; } = [];
+        public int TotalLocalizacoes { get; init; }
+        public IReadOnlyCollection<Agente> Localizacoes { get; init; } = [];
+        public FiltrosAgentes? Filtros { get; private set; }
+        public Agente? AgenteAdicionado { get; private set; }
+        public Agente? AgenteParaAtualizacao { get; init; }
+        public bool SalvouAlteracoes { get; private set; }
+
+        public Task<int> ContarAsync(FiltrosAgentes filtros, CancellationToken cancelamento)
+        {
+            Filtros = filtros;
+            return Task.FromResult(Total);
+        }
+
+        public Task<IReadOnlyCollection<Agente>> ListarAsync(FiltrosAgentes filtros, CancellationToken cancelamento)
+        {
+            Filtros = filtros;
+            return Task.FromResult(Itens);
+        }
+
+        public Task<Agente?> ConsultarAsync(Guid id, CancellationToken cancelamento) => Task.FromResult(AgenteParaAtualizacao);
+        public Task<Agente?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento) => Task.FromResult(AgenteParaAtualizacao);
+        public Task<int> ContarComCoordenadasAsync(CancellationToken cancelamento) => Task.FromResult(TotalLocalizacoes);
+        public Task<IReadOnlyCollection<Agente>> ListarComCoordenadasAsync(int limite, CancellationToken cancelamento) =>
+            Task.FromResult<IReadOnlyCollection<Agente>>(Localizacoes.Take(limite).ToArray());
+        public Task<IReadOnlyCollection<ContagemSituacaoAgente>> ContarPorSituacaoAsync(CancellationToken cancelamento) => Task.FromResult(Contagens);
+
+        public Task AdicionarAsync(Agente agente, CancellationToken cancelamento)
+        {
+            AgenteAdicionado = agente;
+            return Task.CompletedTask;
+        }
+
+        public Task SalvarAlteracoesAsync(CancellationToken cancelamento)
+        {
+            SalvouAlteracoes = true;
+            return Task.CompletedTask;
+        }
+    }
+}

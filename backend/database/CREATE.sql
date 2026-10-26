@@ -273,3 +273,57 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261026175120_AdicionarCadastroAgentes') THEN
+    CREATE TABLE agentes (
+        id uuid NOT NULL,
+        nome character varying(160) NOT NULL,
+        categoria_profissional character varying(120) NOT NULL,
+        base_operacional character varying(240) NOT NULL,
+        latitude numeric(9,6),
+        longitude numeric(9,6),
+        situacao character varying(30) NOT NULL,
+        origem_dados character varying(20) NOT NULL,
+        criado_em timestamp with time zone NOT NULL,
+        atualizado_em timestamp with time zone NOT NULL,
+        CONSTRAINT "PK_agentes" PRIMARY KEY (id),
+        CONSTRAINT "CK_agentes_coordenadas_completas" CHECK ((latitude IS NULL AND longitude IS NULL) OR (latitude IS NOT NULL AND longitude IS NOT NULL)),
+        CONSTRAINT "CK_agentes_latitude" CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
+        CONSTRAINT "CK_agentes_longitude" CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180)
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261026175120_AdicionarCadastroAgentes') THEN
+    CREATE INDEX "IX_agentes_categoria_profissional" ON agentes (categoria_profissional);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261026175120_AdicionarCadastroAgentes') THEN
+    CREATE INDEX "IX_agentes_nome" ON agentes (nome);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261026175120_AdicionarCadastroAgentes') THEN
+    CREATE INDEX "IX_agentes_situacao" ON agentes (situacao);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261026175120_AdicionarCadastroAgentes') THEN
+    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+    VALUES ('20261026175120_AdicionarCadastroAgentes', '10.0.13');
+    END IF;
+END $EF$;
+COMMIT;
+

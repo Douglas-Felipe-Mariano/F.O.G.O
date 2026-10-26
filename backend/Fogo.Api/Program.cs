@@ -59,8 +59,11 @@ builder.Services.AddControllers().AddJsonOptions(opcoes =>
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IEquipamentoRepository, EquipamentoRepository>();
 builder.Services.AddScoped<EquipamentoService>();
+builder.Services.AddScoped<IAgenteRepository, AgenteRepository>();
+builder.Services.AddScoped<AgenteService>();
 builder.Services.AddScoped<ProvisionadorPrimeiroUsuario>();
 builder.Services.AddScoped<IPublicadorEventosEquipamentos, PublicadorEventosEquipamentos>();
+builder.Services.AddScoped<IPublicadorEventosAgentes, PublicadorEventosAgentes>();
 
 var app = builder.Build();
 

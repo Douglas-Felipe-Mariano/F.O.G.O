@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HubConnectionBuilder } from '@microsoft/signalr';
-import MapaEquipamentos, { LocalizacaoEquipamento } from './MapaEquipamentos';
+import AgentesView from './AgentesView';
+import MapaEquipamentos, { LocalizacaoAgente, LocalizacaoEquipamento } from './MapaEquipamentos';
 import './App.css';
 import './Visoes.css';
 import './FilaManutencao.css';
@@ -40,6 +41,7 @@ type EventoEquipamentoAlterado = { equipamentoId: string; operacao: 'criado' | '
 
 type Filtros = { tipo: string; situacao: string; bairro: string };
 type RespostaMapa = { totalComCoordenadas: number; limite: number; resultadoTruncado: boolean; itens: LocalizacaoEquipamento[] };
+type RespostaMapaAgentes = { totalComCoordenadas: number; limite: number; resultadoTruncado: boolean; itens: LocalizacaoAgente[] };
 
 const estados: { valor: SituacaoEquipamento; rotulo: string }[] = [
   { valor: 'aindaNaoInstalado', rotulo: 'Ainda não instalado' },
@@ -68,9 +70,11 @@ function App() {
   const [itens, setItens] = useState<Equipamento[]>([]);
   const [indicadores, setIndicadores] = useState<Indicadores | null>(null);
   const [mapa, setMapa] = useState<RespostaMapa | null>(null);
+  const [mapaAgentes, setMapaAgentes] = useState<RespostaMapaAgentes | null>(null);
   const [carregandoMapa, setCarregandoMapa] = useState(false);
   const [statusTempoReal, setStatusTempoReal] = useState<'conectando' | 'conectado' | 'reconectando' | 'desconectado'>('desconectado');
-  const [visao, setVisao] = useState<'inventario' | 'mapa'>('inventario');
+  const [visao, setVisao] = useState<'inventario' | 'mapa' | 'agentes'>('inventario');
+  const [revisaoAgentes, setRevisaoAgentes] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [total, setTotal] = useState(0);
   const [filtrosMapa, setFiltrosMapa] = useState<Filtros>(vazioFiltros);
@@ -137,8 +141,16 @@ function App() {
       if (pesquisaMapa.tipo) parametros.set('tipo', pesquisaMapa.tipo);
       if (pesquisaMapa.situacao) parametros.set('situacao', pesquisaMapa.situacao);
       if (pesquisaMapa.bairro) parametros.set('bairro', pesquisaMapa.bairro);
-      const resposta = await chamarApi(`/api/equipamentos/localizacoes?${parametros}`);
-      setMapa(await resposta.json() as RespostaMapa);
+      const [respostaEquipamentos, respostaAgentes] = await Promise.all([
+        chamarApi(`/api/equipamentos/localizacoes?${parametros}`),
+        chamarApi('/api/agentes/localizacoes?limite=1000'),
+      ]);
+      const [localizacoesEquipamentos, localizacoesAgentes] = await Promise.all([
+        respostaEquipamentos.json() as Promise<RespostaMapa>,
+        respostaAgentes.json() as Promise<RespostaMapaAgentes>,
+      ]);
+      setMapa(localizacoesEquipamentos);
+      setMapaAgentes(localizacoesAgentes);
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar as localizações.');
     } finally {
@@ -179,6 +191,14 @@ function App() {
       if (cancelado) return;
       atualizarDados();
       setMensagem('Dados atualizados em tempo real.');
+    });
+    conexao.on('agenteAlterado', (_evento: { agenteId: string; operacao: 'criado' | 'atualizado'; atualizadoEm: string }) => {
+      if (cancelado) return;
+      setRevisaoAgentes((revisao) => revisao + 1);
+      if (atualizacaoTempoReal.current.visao === 'mapa') {
+        void atualizacaoTempoReal.current.carregarMapa();
+      }
+      setMensagem('Quadro de agentes atualizado em tempo real.');
     });
     conexao.onreconnecting(() => { if (!cancelado) setStatusTempoReal('reconectando'); });
     conexao.onreconnected(() => {
@@ -373,8 +393,9 @@ function App() {
           </div>
 
           <nav className="view-tabs" aria-label="Visões do inventário">
-            <button type="button" aria-pressed={visao === 'inventario'} className={visao === 'inventario' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('inventario')}>Lista de equipamentos</button>
+            <button type="button" aria-pressed={visao === 'inventario'} className={visao === 'inventario' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('inventario')}>Equipamentos</button>
             <button type="button" aria-pressed={visao === 'mapa'} className={visao === 'mapa' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('mapa')}>Mapa operacional</button>
+            <button type="button" aria-pressed={visao === 'agentes'} className={visao === 'agentes' ? 'view-tab active' : 'view-tab'} onClick={() => setVisao('agentes')}>Agentes</button>
           </nav>
 
           {visao === 'inventario' ? <section className="inventory-panel" aria-labelledby="inventory-title">
@@ -405,12 +426,12 @@ function App() {
               ))}</tbody></table></div>
             )}
             <div className="pagination"><span>{total ? `${(pagina - 1) * 25 + 1}–${Math.min(pagina * 25, total)} de ${total}` : '0 registros'}</span><div><button className="button button-quiet" disabled={pagina <= 1 || carregando} onClick={() => setPagina((atual) => atual - 1)}>← Anterior</button><span>Página {pagina}</span><button className="button button-quiet" disabled={pagina * 25 >= total || carregando} onClick={() => setPagina((atual) => atual + 1)}>Próxima →</button></div></div>
-          </section> : <section className="painel-mapa" aria-labelledby="mapa-title">
+          </section> : visao === 'mapa' ? <section className="painel-mapa" aria-labelledby="mapa-title">
             <div className="mapa-cabecalho">
               <div>
                 <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA</p>
-                <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} com coordenadas)</span></h2>
-                <p className="mapa-descricao">Exibe registros persistidos que possuem latitude e longitude. Selecione um marcador para consultar os detalhes.</p>
+                <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes)</span></h2>
+                <p className="mapa-descricao">Exibe equipamentos e agentes com coordenadas persistidas. Marcadores verdes representam equipamentos; azuis, agentes. A situação da equipe é informada manualmente.</p>
               </div>
               <button className="button button-quiet" onClick={() => void carregarMapa()} disabled={carregandoMapa}>↻ Atualizar mapa</button>
             </div>
@@ -427,10 +448,11 @@ function App() {
                 ? <button className="button button-secondary" onClick={() => void carregarMapa(1000)} disabled={carregandoMapa}>Carregar até 1.000 pontos</button>
                 : <span>O limite máximo desta consulta foi atingido.</span>}
             </div>}
-            {carregandoMapa ? <div className="mapa-vazio"><strong>Carregando localizações…</strong><span>Consultando registros persistidos.</span></div> : mapa?.itens.length ? <MapaEquipamentos equipamentos={mapa.itens} /> : (
-              <div className="mapa-vazio"><strong>Nenhuma localização cadastrada</strong><span>O mapa mostra somente equipamentos persistidos que tenham latitude e longitude; nenhum marcador demonstrativo foi criado.</span></div>
+            {mapaAgentes?.resultadoTruncado && <div className="mapa-alerta" role="status"><span>Exibindo até {mapaAgentes.limite} agentes com coordenadas. Existem mais registros que não aparecem nesta consulta.</span></div>}
+            {carregandoMapa ? <div className="mapa-vazio"><strong>Carregando localizações…</strong><span>Consultando registros persistidos.</span></div> : mapa?.itens.length || mapaAgentes?.itens.length ? <MapaEquipamentos equipamentos={mapa?.itens ?? []} agentes={mapaAgentes?.itens ?? []} /> : (
+              <div className="mapa-vazio"><strong>Nenhuma localização cadastrada</strong><span>O mapa mostra registros persistidos que tenham latitude e longitude; nenhum marcador demonstrativo foi criado.</span></div>
             )}
-          </section>}
+          </section> : <AgentesView token={token} revisao={revisaoAgentes} />}
         </section>
       )}
 
