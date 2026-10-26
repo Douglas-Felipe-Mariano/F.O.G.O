@@ -48,8 +48,8 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
     public async Task<IReadOnlyCollection<ContagemSituacao>> ContarPorSituacaoAsync(CancellationToken cancelamento) =>
         await banco.Equipamentos.AsNoTracking()
             .GroupBy(item => item.Situacao)
+            .OrderBy(grupo => grupo.Key)
             .Select(grupo => new ContagemSituacao(grupo.Key, grupo.Count()))
-            .OrderBy(item => item.Situacao)
             .ToArrayAsync(cancelamento);
 
     public Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento) =>
