@@ -21,6 +21,15 @@ public sealed class Agente
     public DateTimeOffset AtualizadoEm { get; set; }
 }
 
+public sealed class HistoricoLocalizacaoAgente
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AgenteId { get; set; }
+    public decimal Latitude { get; set; }
+    public decimal Longitude { get; set; }
+    public DateTimeOffset RegistradaEm { get; set; }
+}
+
 public sealed record AgenteRequisicao(
     string Nome,
     string CategoriaProfissional,
@@ -70,6 +79,21 @@ public sealed record LocalizacaoAgenteResposta(
     decimal Longitude,
     SituacaoAgente Situacao,
     OrigemRegistro OrigemDados = OrigemRegistro.Manual);
+
+public sealed record HistoricoLocalizacaoAgenteResposta(
+    Guid Id,
+    Guid AgenteId,
+    decimal Latitude,
+    decimal Longitude,
+    DateTimeOffset RegistradaEm);
+
+public sealed record TrajetoAgenteResposta(
+    Guid AgenteId,
+    string NomeAgente,
+    DateOnly Data,
+    bool HistoricoDisponivel,
+    string Mensagem,
+    IReadOnlyCollection<HistoricoLocalizacaoAgenteResposta> Localizacoes);
 
 public sealed record MapaAgentesResposta(
     int TotalComCoordenadas,

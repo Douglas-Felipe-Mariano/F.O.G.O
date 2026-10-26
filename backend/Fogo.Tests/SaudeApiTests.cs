@@ -113,6 +113,7 @@ public sealed class AutenticacaoTests : IClassFixture<ConfiguracaoFogoWebApplica
         var resposta = await _cliente.GetAsync("/api/autenticacao/csrf");
 
         Assert.Equal(HttpStatusCode.NoContent, resposta.StatusCode);
+        Assert.True(resposta.Headers.CacheControl?.NoStore);
         var cookies = resposta.Headers.GetValues("Set-Cookie");
         var cookieCsrf = Assert.Single(cookies);
         Assert.Contains("fogo.csrf=", cookieCsrf);

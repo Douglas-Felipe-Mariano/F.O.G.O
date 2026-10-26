@@ -70,6 +70,26 @@ public sealed class ConfiguracaoAutenticacaoTests
         Assert.Equal(["http://localhost:8080", "http://127.0.0.1:8080"], ObterOrigens(builder));
     }
 
+    [Fact]
+    public void AdicionarAutenticacaoFogo_PadraoForaDeDevelopment_ExigeCookiesSeguros()
+    {
+        var builder = CriarBuilder("Production", "https://portal.example");
+
+        builder.AdicionarAutenticacaoFogo();
+
+        Assert.True(ObterOpcoesToken(builder).CookiesSeguros);
+    }
+
+    [Fact]
+    public void AdicionarAutenticacaoFogo_OverrideLocalPodeDesativarCookiesSegurosApenasQuandoExplicito()
+    {
+        var builder = CriarBuilder("Production", "http://localhost:8080", cookiesSeguros: false);
+
+        builder.AdicionarAutenticacaoFogo();
+
+        Assert.False(ObterOpcoesToken(builder).CookiesSeguros);
+    }
+
     [Theory]
     [InlineData("http://localhost:8080", true)]
     [InlineData("http://127.0.0.1:8080", true)]
@@ -83,14 +103,15 @@ public sealed class ConfiguracaoAutenticacaoTests
         Assert.Equal(esperado, ProtecaoRequisicao.OrigemPermitida(contexto, permitidas));
     }
 
-    private static WebApplicationBuilder CriarBuilder(string ambiente, string? origens)
+    private static WebApplicationBuilder CriarBuilder(string ambiente, string? origens, bool? cookiesSeguros = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = ambiente });
         var configuracao = new Dictionary<string, string?>
         {
             ["FOGO_JWT_KEY"] = "chave-jwt-falsa-somente-para-testes-com-32-bytes",
             ["ConnectionStrings:PostgreSQL"] = "Host=localhost;Database=teste;Username=teste;Password=nao-usar",
-            ["FOGO_ORIGINS"] = origens
+            ["FOGO_ORIGINS"] = origens,
+            ["FOGO_COOKIES_SEGUROS"] = cookiesSeguros?.ToString()
         };
         builder.Configuration.AddInMemoryCollection(configuracao);
         return builder;
@@ -100,5 +121,11 @@ public sealed class ConfiguracaoAutenticacaoTests
     {
         var registro = Assert.Single(builder.Services, descriptor => descriptor.ServiceType == typeof(IReadOnlyCollection<string>));
         return Assert.IsAssignableFrom<IReadOnlyCollection<string>>(registro.ImplementationInstance);
+    }
+
+    private static OpcoesToken ObterOpcoesToken(WebApplicationBuilder builder)
+    {
+        var registro = Assert.Single(builder.Services, descriptor => descriptor.ServiceType == typeof(OpcoesToken));
+        return Assert.IsType<OpcoesToken>(registro.ImplementationInstance);
     }
 }

@@ -67,6 +67,8 @@ builder.Services.AddScoped<IEquipamentoRepository, EquipamentoRepository>();
 builder.Services.AddScoped<EquipamentoService>();
 builder.Services.AddScoped<IAgenteRepository, AgenteRepository>();
 builder.Services.AddScoped<AgenteService>();
+builder.Services.AddScoped<HistoricoAgentesService>();
+builder.Services.AddScoped<CameraPublicaService>();
 builder.Services.AddScoped<ProvisionadorPrimeiroUsuario>();
 builder.Services.AddScoped<IPublicadorEventosEquipamentos, PublicadorEventosEquipamentos>();
 builder.Services.AddScoped<IPublicadorEventosAgentes, PublicadorEventosAgentes>();
@@ -117,6 +119,29 @@ app.MapGet("/api/radares/openstreetmap", async (
         Results.Ok(await radares.ConsultarAsync(cancelamento)))
     .WithName("ConsultarRadaresOpenStreetMap")
     .WithSummary("Consulta radares mapeados pelo OpenStreetMap na região de Tupã; os registros importados não são gravados no banco.");
+
+app.MapGet("/api/cameras-publicas", async (
+        string? cidade,
+        CameraPublicaService cameras,
+        CancellationToken cancelamento) =>
+        Results.Ok(await cameras.ListarAsync(cidade, cancelamento)))
+    .WithName("ListarCamerasPublicas")
+    .WithSummary("Lista câmeras públicas com localização geográfica verificada e streams disponibilizados publicamente.");
+
+app.MapGet("/api/agentes/{id:guid}/trajeto", async (
+        Guid id,
+        DateOnly? data,
+        HistoricoAgentesService historico,
+        CancellationToken cancelamento) =>
+    {
+        var resultado = await historico.ConsultarTrajetoDiarioAsync(
+            id,
+            data ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            cancelamento);
+        return resultado is null ? Results.NotFound() : Results.Ok(resultado);
+    })
+    .WithName("ConsultarTrajetoDiarioAgente")
+    .WithSummary("Consulta os registros de posição de um agente na data solicitada; não representa telemetria em tempo real.");
 
 app.MapGet("/api/autenticacao/eu", (System.Security.Claims.ClaimsPrincipal usuario) =>
         Results.Ok(new { id = usuario.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value }))

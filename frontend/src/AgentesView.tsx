@@ -35,7 +35,7 @@ const vazioFormulario = (): AgenteRequisicao => ({
   situacao: 'disponivel', origemDados: 'manual',
 });
 
-export default function AgentesView({ token, revisao }: { token: string; revisao: number }) {
+export default function AgentesView({ token, revisao, agenteIdParaEditar, onAgenteEditado }: { token: string; revisao: number; agenteIdParaEditar?: string | null; onAgenteEditado?: () => void }) {
   const [pagina, setPagina] = useState(1);
   const [categoria, setCategoria] = useState('');
   const [situacao, setSituacao] = useState('');
@@ -109,6 +109,30 @@ export default function AgentesView({ token, revisao }: { token: string; revisao
     setModalAberto(true);
     setErro('');
   }
+
+  useEffect(() => {
+    if (!agenteIdParaEditar) return;
+    let cancelado = false;
+    const carregarAgenteParaEditar = async () => {
+      try {
+        let agente = dados.itens.find((item) => item.id === agenteIdParaEditar);
+        if (!agente) {
+          const resposta = await chamarApi(`/api/agentes/${agenteIdParaEditar}`);
+          agente = await resposta.json() as Agente;
+        }
+        if (cancelado) return;
+        abrirEdicao(agente);
+        onAgenteEditado?.();
+      } catch (falha) {
+        if (!cancelado) {
+          setErro(falha instanceof Error ? falha.message : 'Não foi possível consultar este agente.');
+          onAgenteEditado?.();
+        }
+      }
+    };
+    void carregarAgenteParaEditar();
+    return () => { cancelado = true; };
+  }, [agenteIdParaEditar, chamarApi, dados.itens, onAgenteEditado]);
 
   async function salvar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();

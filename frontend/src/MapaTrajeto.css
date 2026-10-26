@@ -1,0 +1,2 @@
+.mapa-data-trajeto{display:grid;gap:5px;min-width:190px;color:#aab7af;font-size:10px;text-align:left}.mapa-data-trajeto input{min-height:36px;padding:7px 10px;border:1px solid #36463d;border-radius:3px;background:#101815;color:#e6eee8;color-scheme:dark;font:11px var(--mono)}
+@media(max-width:650px){.mapa-data-trajeto{width:100%;min-width:0}.mapa-data-trajeto input{width:100%}}

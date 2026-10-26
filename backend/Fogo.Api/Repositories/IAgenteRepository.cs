@@ -16,6 +16,8 @@ public interface IAgenteRepository
     Task<Agente?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento);
     Task<int> ContarComCoordenadasAsync(CancellationToken cancelamento);
     Task<IReadOnlyCollection<Agente>> ListarComCoordenadasAsync(int deslocamento, int limite, CancellationToken cancelamento);
+    Task<IReadOnlyCollection<HistoricoLocalizacaoAgente>> ListarHistoricoAsync(Guid agenteId, DateOnly data, CancellationToken cancelamento);
+    Task AdicionarLocalizacaoHistoricaAsync(HistoricoLocalizacaoAgente localizacao, CancellationToken cancelamento);
     Task<IReadOnlyCollection<ContagemSituacaoAgente>> ContarPorSituacaoAsync(CancellationToken cancelamento);
     Task AdicionarAsync(Agente agente, CancellationToken cancelamento);
     Task SalvarAlteracoesAsync(CancellationToken cancelamento);

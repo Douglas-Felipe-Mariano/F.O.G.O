@@ -65,6 +65,16 @@ public sealed class AgenteService(IAgenteRepository repositorio, TimeProvider re
             CriadoEm = agora,
             AtualizadoEm = agora
         };
+        if (agente.Latitude is { } latitude && agente.Longitude is { } longitude)
+        {
+            await repositorio.AdicionarLocalizacaoHistoricaAsync(new HistoricoLocalizacaoAgente
+            {
+                AgenteId = agente.Id,
+                Latitude = latitude,
+                Longitude = longitude,
+                RegistradaEm = agora
+            }, cancelamento);
+        }
         await repositorio.AdicionarAsync(agente, cancelamento);
         return ResultadoOperacao<AgenteResposta>.Sucesso(AgenteResposta.De(agente));
     }
@@ -86,6 +96,7 @@ public sealed class AgenteService(IAgenteRepository repositorio, TimeProvider re
             return ResultadoOperacao<AgenteResposta>.RecursoNaoEncontrado();
         }
 
+        var coordenadasAlteradas = agente.Latitude != requisicao.Latitude || agente.Longitude != requisicao.Longitude;
         agente.Nome = requisicao.Nome.Trim();
         agente.CategoriaProfissional = requisicao.CategoriaProfissional.Trim();
         agente.BaseOperacional = requisicao.BaseOperacional.Trim();
@@ -94,6 +105,16 @@ public sealed class AgenteService(IAgenteRepository repositorio, TimeProvider re
         agente.Situacao = requisicao.Situacao;
         agente.OrigemDados = requisicao.OrigemDados;
         agente.AtualizadoEm = relogio.GetUtcNow();
+        if (coordenadasAlteradas && agente.Latitude is { } latitude && agente.Longitude is { } longitude)
+        {
+            await repositorio.AdicionarLocalizacaoHistoricaAsync(new HistoricoLocalizacaoAgente
+            {
+                AgenteId = agente.Id,
+                Latitude = latitude,
+                Longitude = longitude,
+                RegistradaEm = agente.AtualizadoEm
+            }, cancelamento);
+        }
         await repositorio.SalvarAlteracoesAsync(cancelamento);
         return ResultadoOperacao<AgenteResposta>.Sucesso(AgenteResposta.De(agente));
     }

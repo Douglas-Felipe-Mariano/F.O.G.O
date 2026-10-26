@@ -1,11 +1,13 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HubConnectionBuilder } from '@microsoft/signalr';
 import AgentesView from './AgentesView';
-import MapaEquipamentos, { LocalizacaoAgente, LocalizacaoEquipamento } from './MapaEquipamentos';
+import MapaEquipamentos, { LocalizacaoAgente, LocalizacaoEquipamento, PontoHistoricoAgente } from './MapaEquipamentos';
+import { CameraPublica, CatalogoCameras, VideoCameraModal } from './CamerasPublicas';
 import './App.css';
 import './Visoes.css';
 import './FilaManutencao.css';
 import './MapaInicio.css';
+import './MapaTrajeto.css';
 
 type SituacaoEquipamento = 'aindaNaoInstalado' | 'operacional' | 'mauFuncionamento' | 'emManutencao' | 'desativado' | 'furtado';
 type TipoManutencao = 'imediata' | 'agendada' | 'periodica';
@@ -45,8 +47,15 @@ type RespostaMapaBase<T> = { totalComCoordenadas: number; limite: number; result
 type RespostaMapa = RespostaMapaBase<LocalizacaoEquipamento>;
 type RespostaMapaAgentes = RespostaMapaBase<LocalizacaoAgente>;
 type RespostaRadaresOpenStreetMap = { disponivel: boolean; fonte: string; aviso: string; itens: LocalizacaoEquipamento[] };
+type RespostaCamerasPublicas = { total: number; itens: CameraPublica[] };
+type TrajetoAgente = { agenteId: string; nomeAgente: string; data: string; historicoDisponivel: boolean; mensagem: string; localizacoes: PontoHistoricoAgente[] };
 type LocalizacaoUsuario = { latitude: number; longitude: number };
 const tamanhoLoteMapa = 1000;
+const dataHojeLocal = () => {
+  const hoje = new Date();
+  hoje.setMinutes(hoje.getMinutes() - hoje.getTimezoneOffset());
+  return hoje.toISOString().slice(0, 10);
+};
 
 const estados: { valor: SituacaoEquipamento; rotulo: string }[] = [
   { valor: 'aindaNaoInstalado', rotulo: 'Ainda não instalado' },
@@ -74,11 +83,19 @@ const vazioFormulario = (): EquipamentoRequisicao => ({
 
 function App() {
   const [token, setToken] = useState<string | null>(null);
+  const [preparandoSessao, setPreparandoSessao] = useState(true);
   const [itens, setItens] = useState<Equipamento[]>([]);
   const [indicadores, setIndicadores] = useState<Indicadores | null>(null);
   const [mapa, setMapa] = useState<RespostaMapa | null>(null);
   const [mapaAgentes, setMapaAgentes] = useState<RespostaMapaAgentes | null>(null);
   const [radaresOpenStreetMap, setRadaresOpenStreetMap] = useState<RespostaRadaresOpenStreetMap | null>(null);
+  const [camerasPublicas, setCamerasPublicas] = useState<CameraPublica[]>([]);
+  const [cameraEmReproducao, setCameraEmReproducao] = useState<CameraPublica | null>(null);
+  const [catalogoCamerasAberto, setCatalogoCamerasAberto] = useState(false);
+  const [trajetoAgente, setTrajetoAgente] = useState<TrajetoAgente | null>(null);
+  const [dataHistoricoAgente, setDataHistoricoAgente] = useState(dataHojeLocal);
+  const [carregandoTrajeto, setCarregandoTrajeto] = useState(false);
+  const [agenteParaEditar, setAgenteParaEditar] = useState<string | null>(null);
   const [localizacaoUsuario, setLocalizacaoUsuario] = useState<LocalizacaoUsuario | null>(null);
   const [estadoLocalizacaoUsuario, setEstadoLocalizacaoUsuario] = useState<'aguardando' | 'localizada' | 'negada' | 'indisponivel'>('aguardando');
   const [enquadramentoMapa, setEnquadramentoMapa] = useState<'usuario' | 'todos'>('usuario');
@@ -101,6 +118,32 @@ function App() {
   const [editando, setEditando] = useState<Equipamento | null>(null);
   const [formulario, setFormulario] = useState<EquipamentoRequisicao>(vazioFormulario);
   const [credenciais, setCredenciais] = useState({ identificador: '', senha: '' });
+  const emissaoCsrfEmAndamento = useRef<Promise<string> | null>(null);
+
+  const obterTokenCsrf = useCallback((renovar = false): Promise<string> => {
+    const existente = lerCookie('fogo.csrf');
+    if (existente && !renovar) return Promise.resolve(existente);
+
+    if (!emissaoCsrfEmAndamento.current) {
+      emissaoCsrfEmAndamento.current = (async () => {
+        const resposta = await fetch('/api/autenticacao/csrf', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (!resposta.ok) {
+          throw new Error(`A API não conseguiu iniciar a proteção CSRF (HTTP ${resposta.status}).`);
+        }
+
+        const csrf = lerCookie('fogo.csrf');
+        if (!csrf) {
+          throw new Error('A API respondeu, mas o navegador não recebeu o cookie CSRF. Atualize a página e confira a conexão local.');
+        }
+        return csrf;
+      })().finally(() => { emissaoCsrfEmAndamento.current = null; });
+    }
+
+    return emissaoCsrfEmAndamento.current;
+  }, []);
 
   const chamarApi = useCallback(async (url: string, init: RequestInit = {}) => {
     const cabecalhos = new Headers(init.headers);
@@ -183,7 +226,7 @@ function App() {
       if (pesquisaMapa.tipo) parametros.set('tipo', pesquisaMapa.tipo);
       if (pesquisaMapa.situacao) parametros.set('situacao', pesquisaMapa.situacao);
       if (pesquisaMapa.bairro) parametros.set('bairro', pesquisaMapa.bairro);
-      const [respostaEquipamentos, respostaAgentes, radaresPublicos] = await Promise.all([
+      const [respostaEquipamentos, respostaAgentes, radaresPublicos, catalogoCameras] = await Promise.all([
         carregarTodasLocalizacoes<LocalizacaoEquipamento>('/api/equipamentos/localizacoes', parametros),
         carregarTodasLocalizacoes<LocalizacaoAgente>('/api/agentes/localizacoes', new URLSearchParams()),
         chamarApi('/api/radares/openstreetmap')
@@ -194,10 +237,14 @@ function App() {
             aviso: 'A consulta pública de radares está temporariamente indisponível. Os dados demonstrativos continuam visíveis.',
             itens: [],
           })),
+        chamarApi('/api/cameras-publicas')
+          .then(async (resposta) => await resposta.json() as RespostaCamerasPublicas)
+          .catch(() => ({ total: 0, itens: [] })),
       ]);
       setMapa(respostaEquipamentos);
       setMapaAgentes(respostaAgentes);
       setRadaresOpenStreetMap(radaresPublicos);
+      setCamerasPublicas(catalogoCameras.itens);
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar as localizações.');
     } finally {
@@ -231,6 +278,13 @@ function App() {
   }, [carregarDados, carregarMapa, visao]);
 
   useEffect(() => { void carregarDados(); }, [carregarDados]);
+
+  useEffect(() => {
+    if (token) return;
+    setCameraEmReproducao(null);
+    setCatalogoCamerasAberto(false);
+    setTrajetoAgente(null);
+  }, [token]);
 
   useEffect(() => {
     if (token) solicitarLocalizacaoUsuario();
@@ -293,23 +347,26 @@ function App() {
 
   useEffect(() => {
     let cancelado = false;
+    setPreparandoSessao(true);
     void (async () => {
       try {
-        await fetch('/api/autenticacao/csrf', { credentials: 'include' });
+        const csrf = await obterTokenCsrf();
         if (cancelado || token) return;
-        const csrf = lerCookie('fogo.csrf');
-        if (!csrf) return;
         const resposta = await fetch('/api/autenticacao/atualizar', {
           method: 'POST', credentials: 'include', headers: { 'X-CSRF-TOKEN': csrf },
         });
-        if (!resposta.ok) return;
+        if (!resposta.ok) {
+          if (resposta.status === 401) await obterTokenCsrf(true);
+          return;
+        }
         const dados = await resposta.json() as RespostaToken;
         if (!cancelado) setToken(dados.tokenAcesso);
       } catch { /* API indisponível; a página de login permanece acessível. */ }
+      finally { if (!cancelado) setPreparandoSessao(false); }
     })();
 
     return () => { cancelado = true; };
-  }, [token]);
+  }, [obterTokenCsrf, token]);
 
   const bairros = useMemo(() => [...new Set(itens.map((item) => item.bairro))].sort(), [itens]);
   const possuiFiltrosInventario = Boolean(pesquisa.tipo || pesquisa.situacao || pesquisa.bairro || pesquisaManutencao);
@@ -319,13 +376,13 @@ function App() {
     ...(radaresOpenStreetMap?.itens ?? semLocalizacoesEquipamentos),
   ], [mapa?.itens, radaresOpenStreetMap?.itens]);
   const agentesMapa = mapaAgentes?.itens ?? semLocalizacoesAgentes;
+  const camerasMapa = useMemo(() => camerasPublicas.filter((camera) => camera.latitude !== null && camera.longitude !== null), [camerasPublicas]);
 
   async function entrar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     setErro('');
     try {
-      const csrf = lerCookie('fogo.csrf');
-      if (!csrf) throw new Error('Não foi possível iniciar a proteção CSRF. Atualize a página.');
+      const csrf = await obterTokenCsrf();
       const resposta = await fetch('/api/autenticacao/entrar', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
         body: JSON.stringify(credenciais),
@@ -389,6 +446,45 @@ function App() {
     setModalAberto(true);
   }
 
+  const editarEquipamentoDoMapa = useCallback(async (id: string) => {
+    try {
+      const resposta = await chamarApi(`/api/equipamentos/${id}`);
+      abrirEdicao(await resposta.json() as Equipamento);
+      setVisao('inventario');
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível consultar este equipamento.');
+    }
+  }, [chamarApi]);
+
+  const abrirEdicaoAgenteDoMapa = useCallback((id: string) => {
+    setAgenteParaEditar(id);
+    setVisao('agentes');
+  }, []);
+
+  const carregarTrajetoAgente = useCallback(async (id: string) => {
+    if (!dataHistoricoAgente) {
+      setErro('Selecione uma data para consultar o histórico de posições.');
+      return;
+    }
+    setCarregandoTrajeto(true);
+    setErro('');
+    setTrajetoAgente(null);
+    try {
+      const parametros = new URLSearchParams({ data: dataHistoricoAgente });
+      const resposta = await chamarApi(`/api/agentes/${id}/trajeto?${parametros}`);
+      setTrajetoAgente(await resposta.json() as TrajetoAgente);
+      setEnquadramentoMapa('todos');
+      setVisao('mapa');
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível consultar as posições registradas.');
+    } finally {
+      setCarregandoTrajeto(false);
+    }
+  }, [chamarApi, dataHistoricoAgente]);
+
+  const fecharVideoCamera = useCallback(() => setCameraEmReproducao(null), []);
+  const fecharCatalogoCameras = useCallback(() => setCatalogoCamerasAberto(false), []);
+
   async function salvar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     setErro('');
@@ -444,7 +540,7 @@ function App() {
             <label>Usuário ou e-mail<input autoComplete="username" required value={credenciais.identificador} onChange={(e) => setCredenciais({ ...credenciais, identificador: e.target.value })} /></label>
             <label>Senha<input type="password" autoComplete="current-password" required value={credenciais.senha} onChange={(e) => setCredenciais({ ...credenciais, senha: e.target.value })} /></label>
             {erro && <p className="alert error" role="alert">{erro}</p>}
-            <button className="button button-primary" type="submit">Entrar <span aria-hidden="true">↗</span></button>
+            <button className="button button-primary" type="submit" disabled={preparandoSessao}>{preparandoSessao ? 'Preparando acesso…' : <>Entrar <span aria-hidden="true">↗</span></>}</button>
             <p className="form-hint">A sessão usa token de acesso curto e cookie de atualização protegido.</p>
           </form>
         </section>
@@ -506,20 +602,24 @@ function App() {
             <div className="mapa-cabecalho">
               <div>
                 <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA · TODOS OS REGISTROS COM COORDENADAS</p>
-                <h2 id="mapa-title">Mapa de equipamentos e agentes <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes · {radaresOpenStreetMap?.itens.length ?? '—'} radares OSM)</span></h2>
+                <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes · {camerasPublicas.length} câmeras · {radaresOpenStreetMap?.itens.length ?? '—'} radares OSM)</span></h2>
                 <p className="mapa-descricao">Mapa interativo com dados cadastrados e pontos públicos mapeados. A localização do navegador só é usada nesta sessão, após sua autorização.</p>
               </div>
               <div className="mapa-acoes">
                 <div className="mapa-legenda" aria-label="Legenda do mapa"><span><i className="legenda-equipamento" />Equipamentos</span><span><i className="legenda-agente" />Agentes</span></div>
                 <span className="mapa-legenda-fonte">Radares OSM em verde-água · dados simulados são identificados nos marcadores.</span>
+                <label className="mapa-data-trajeto">Data do histórico de posições<input required type="date" value={dataHistoricoAgente} onChange={(evento) => setDataHistoricoAgente(evento.target.value)} /></label>
                 <span className={`mapa-status-localizacao ${estadoLocalizacaoUsuario === 'localizada' ? 'localizacao-ok' : ''}`}>
                   {estadoLocalizacaoUsuario === 'localizada' ? 'Você está no mapa' : estadoLocalizacaoUsuario === 'aguardando' ? 'Localizando você…' : estadoLocalizacaoUsuario === 'negada' ? 'Localização não autorizada' : 'Localização indisponível'}
                 </span>
                 <button className="button button-quiet" onClick={() => { setEnquadramentoMapa('todos'); }} disabled={!mapa?.itens.length && !mapaAgentes?.itens.length && !radaresOpenStreetMap?.itens.length}>Enquadrar pontos</button>
+                <button className="button button-quiet" onClick={() => setCatalogoCamerasAberto(true)}>Câmeras ao vivo ({camerasPublicas.length})</button>
                 <button className="button button-quiet" onClick={solicitarLocalizacaoUsuario} disabled={estadoLocalizacaoUsuario === 'aguardando'}>Minha localização</button>
                 <button className="button button-quiet" onClick={() => void carregarMapa()} disabled={carregandoMapa}>↻ Atualizar mapa</button>
               </div>
             </div>
+            {trajetoAgente && <div className="mapa-alerta mapa-trajeto-status" role="status"><span><strong>{trajetoAgente.nomeAgente}</strong> · {new Intl.DateTimeFormat('pt-BR').format(new Date(`${trajetoAgente.data}T00:00:00`))} · {trajetoAgente.mensagem} {trajetoAgente.historicoDisponivel && `${trajetoAgente.localizacoes.length} posições registradas.`}</span><button type="button" onClick={() => setTrajetoAgente(null)}>Limpar trajeto</button></div>}
+            {carregandoTrajeto && <div className="mapa-alerta" role="status">Consultando posições registradas do agente…</div>}
             <form className="filters map-filters" onSubmit={(evento) => { evento.preventDefault(); setPesquisaMapa(filtrosMapa); }}>
               <label>Tipo<input placeholder="Ex.: radar" value={filtrosMapa.tipo} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, tipo: evento.target.value })} /></label>
               <label>Situação<select value={filtrosMapa.situacao} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, situacao: evento.target.value })}><option value="">Todas</option>{estados.map((estado) => <option key={estado.valor} value={estado.valor}>{estado.rotulo}</option>)}</select></label>
@@ -537,15 +637,21 @@ function App() {
               <MapaEquipamentos
                 equipamentos={equipamentosMapa}
                 agentes={agentesMapa}
+                cameras={camerasMapa}
                 localizacaoUsuario={localizacaoUsuario}
                 enquadramento={enquadramentoMapa}
+                trajetoAgente={trajetoAgente}
+                onEditarEquipamento={(id) => void editarEquipamentoDoMapa(id)}
+                onEditarAgente={abrirEdicaoAgenteDoMapa}
+                onVerTrajetoAgente={(id) => void carregarTrajetoAgente(id)}
+                onReproduzirCamera={setCameraEmReproducao}
               />
               {carregandoMapa && <div className="mapa-mensagem-overlay"><strong>Carregando localizações…</strong><span>Consultando os registros persistidos.</span></div>}
-              {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && !radaresOpenStreetMap?.itens.length && (
+              {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && !camerasMapa.length && !radaresOpenStreetMap?.itens.length && (
                 <div className="mapa-mensagem-overlay"><strong>Nenhum ponto georreferenciado ainda</strong><span>Adicione registros com coordenadas para vê-los aqui. Os pontos demonstrativos aparecem identificados como simulados.</span></div>
               )}
             </div>
-          </section> : <AgentesView token={token} revisao={revisaoAgentes} />}
+          </section> : <AgentesView token={token} revisao={revisaoAgentes} agenteIdParaEditar={agenteParaEditar} onAgenteEditado={() => setAgenteParaEditar(null)} />}
         </section>
       )}
 
@@ -588,6 +694,8 @@ function App() {
           </form>
         </section>
       </div>}
+      {catalogoCamerasAberto && <CatalogoCameras cameras={camerasPublicas} onPlay={(camera) => { setCatalogoCamerasAberto(false); setCameraEmReproducao(camera); }} onFechar={fecharCatalogoCameras} />}
+      <VideoCameraModal camera={cameraEmReproducao} onFechar={fecharVideoCamera} />
     </main>
   );
 }

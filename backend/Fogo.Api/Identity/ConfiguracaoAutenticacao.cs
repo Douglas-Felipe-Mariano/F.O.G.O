@@ -25,8 +25,8 @@ public static class ConfiguracaoAutenticacao
             Emissor = builder.Configuration["FOGO_JWT_ISSUER"] ?? "Fogo.Api",
             Audiencia = builder.Configuration["FOGO_JWT_AUDIENCE"] ?? "Fogo.Frontend",
             ChaveAssinatura = chaveJwt,
-            CookiesSeguros = !builder.Environment.IsDevelopment()
-                || builder.Configuration.GetValue<bool>("FOGO_HTTPS_DEV")
+            CookiesSeguros = builder.Configuration.GetValue<bool?>("FOGO_COOKIES_SEGUROS")
+                ?? (!builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("FOGO_HTTPS_DEV"))
         };
         var origensConfiguradas = builder.Configuration["FOGO_ORIGINS"];
         if (string.IsNullOrWhiteSpace(origensConfiguradas))

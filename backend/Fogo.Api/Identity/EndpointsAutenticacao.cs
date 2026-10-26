@@ -31,6 +31,7 @@ public static class EndpointsAutenticacao
 
     private static IResult EmitirTokenCsrf(HttpContext contexto, OpcoesToken opcoes)
     {
+        contexto.Response.Headers.CacheControl = "no-store";
         ProtecaoRequisicao.DefinirCookieCsrf(contexto, opcoes.CookiesSeguros);
         return Results.NoContent();
     }

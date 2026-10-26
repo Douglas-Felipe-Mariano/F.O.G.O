@@ -37,6 +37,28 @@ public sealed class AgenteRepository(FogoDbContext banco) : IAgenteRepository
             .Take(limite)
             .ToArrayAsync(cancelamento);
 
+    public async Task<IReadOnlyCollection<HistoricoLocalizacaoAgente>> ListarHistoricoAsync(
+        Guid agenteId,
+        DateOnly data,
+        CancellationToken cancelamento)
+    {
+        var inicio = new DateTimeOffset(data.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        var fim = inicio.AddDays(1);
+        return await banco.HistoricoLocalizacoesAgentes.AsNoTracking()
+            .Where(localizacao => localizacao.AgenteId == agenteId
+                && localizacao.RegistradaEm >= inicio
+                && localizacao.RegistradaEm < fim)
+            .OrderBy(localizacao => localizacao.RegistradaEm)
+            .Take(2000)
+            .ToArrayAsync(cancelamento);
+    }
+
+    public Task AdicionarLocalizacaoHistoricaAsync(HistoricoLocalizacaoAgente localizacao, CancellationToken cancelamento)
+    {
+        banco.HistoricoLocalizacoesAgentes.Add(localizacao);
+        return Task.CompletedTask;
+    }
+
     public async Task<IReadOnlyCollection<ContagemSituacaoAgente>> ContarPorSituacaoAsync(CancellationToken cancelamento) =>
         await banco.Agentes.AsNoTracking()
             .GroupBy(agente => agente.Situacao)

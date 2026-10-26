@@ -25,6 +25,11 @@ public sealed class AgenteServiceTests
         Assert.Equal(agora, agente.AtualizadoEm);
         Assert.Equal(OrigemRegistro.Manual, agente.OrigemDados);
         Assert.Equal(agente.Id, resultado.Valor!.Id);
+        var localizacao = Assert.Single(repositorio.LocalizacoesHistoricasAdicionadas);
+        Assert.Equal(agente.Id, localizacao.AgenteId);
+        Assert.Equal(agora, localizacao.RegistradaEm);
+        Assert.Equal(agente.Latitude, localizacao.Latitude);
+        Assert.Equal(agente.Longitude, localizacao.Longitude);
     }
 
     [Fact]
@@ -38,6 +43,7 @@ public sealed class AgenteServiceTests
         Assert.False(resultado.SucessoOperacao);
         Assert.Contains(nameof(AgenteRequisicao.Latitude), resultado.Erros.Keys);
         Assert.Null(repositorio.AgenteAdicionado);
+        Assert.Empty(repositorio.LocalizacoesHistoricasAdicionadas);
     }
 
     [Fact]
@@ -74,6 +80,26 @@ public sealed class AgenteServiceTests
     }
 
     [Fact]
+    public async Task AtualizarAsync_AlteraCoordenadas_AdicionaHistoricoAntesDoSaveUnico()
+    {
+        var agente = CriarAgente();
+        var repositorio = new RepositorioAgentesFalso { AgenteParaAtualizacao = agente };
+        var servico = new AgenteService(repositorio, new RelogioFalso(new DateTimeOffset(2026, 10, 26, 14, 0, 0, TimeSpan.Zero)));
+
+        var resultado = await servico.AtualizarAsync(
+            agente.Id,
+            CriarRequisicao() with { Latitude = -21.9m, Longitude = -50.5m },
+            CancellationToken.None);
+
+        Assert.True(resultado.SucessoOperacao);
+        var localizacao = Assert.Single(repositorio.LocalizacoesHistoricasAdicionadas);
+        Assert.Equal(agente.Id, localizacao.AgenteId);
+        Assert.Equal(-21.9m, localizacao.Latitude);
+        Assert.Equal(-50.5m, localizacao.Longitude);
+        Assert.True(repositorio.SalvouAlteracoes);
+    }
+
+    [Fact]
     public async Task ListarAsync_RetornaPaginacaoEMapeamento()
     {
         var agente = CriarAgente();
@@ -87,6 +113,43 @@ public sealed class AgenteServiceTests
         Assert.Equal(13, resposta.TotalRegistros);
         Assert.Equal(agente.Id, Assert.Single(resposta.Itens).Id);
         Assert.Equal(filtros, repositorio.Filtros);
+    }
+
+    [Fact]
+    public async Task ConsultarTrajetoDiarioAsync_RetornaSomenteHistoricoRegistradoDaDataSolicitada()
+    {
+        var agente = CriarAgente();
+        var data = new DateOnly(2026, 10, 26);
+        var pontoDoDia = new HistoricoLocalizacaoAgente
+        {
+            AgenteId = agente.Id,
+            Latitude = -21.9m,
+            Longitude = -50.5m,
+            RegistradaEm = new DateTimeOffset(2026, 10, 26, 14, 0, 0, TimeSpan.Zero)
+        };
+        var repositorio = new RepositorioAgentesFalso
+        {
+            AgenteParaAtualizacao = agente,
+            HistoricoParaConsulta =
+            [
+                pontoDoDia,
+                new HistoricoLocalizacaoAgente
+                {
+                    AgenteId = agente.Id,
+                    Latitude = -22m,
+                    Longitude = -50m,
+                    RegistradaEm = new DateTimeOffset(2026, 10, 25, 14, 0, 0, TimeSpan.Zero)
+                }
+            ]
+        };
+
+        var resposta = await new HistoricoAgentesService(repositorio)
+            .ConsultarTrajetoDiarioAsync(agente.Id, data, CancellationToken.None);
+
+        Assert.NotNull(resposta);
+        Assert.True(resposta.HistoricoDisponivel);
+        Assert.Equal(data, repositorio.DataHistoricoSolicitada);
+        Assert.Equal(pontoDoDia.Id, Assert.Single(resposta.Localizacoes).Id);
     }
 
     [Fact]
@@ -158,6 +221,9 @@ public sealed class AgenteServiceTests
         public Agente? AgenteAdicionado { get; private set; }
         public Agente? AgenteParaAtualizacao { get; init; }
         public bool SalvouAlteracoes { get; private set; }
+        public List<HistoricoLocalizacaoAgente> LocalizacoesHistoricasAdicionadas { get; } = [];
+        public IReadOnlyCollection<HistoricoLocalizacaoAgente> HistoricoParaConsulta { get; init; } = [];
+        public DateOnly? DataHistoricoSolicitada { get; private set; }
 
         public Task<int> ContarAsync(FiltrosAgentes filtros, CancellationToken cancelamento)
         {
@@ -184,6 +250,20 @@ public sealed class AgenteServiceTests
         public Task AdicionarAsync(Agente agente, CancellationToken cancelamento)
         {
             AgenteAdicionado = agente;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyCollection<HistoricoLocalizacaoAgente>> ListarHistoricoAsync(Guid agenteId, DateOnly data, CancellationToken cancelamento)
+        {
+            DataHistoricoSolicitada = data;
+            return Task.FromResult<IReadOnlyCollection<HistoricoLocalizacaoAgente>>(
+                HistoricoParaConsulta.Where(localizacao => localizacao.AgenteId == agenteId
+                    && DateOnly.FromDateTime(localizacao.RegistradaEm.UtcDateTime) == data).ToArray());
+        }
+
+        public Task AdicionarLocalizacaoHistoricaAsync(HistoricoLocalizacaoAgente localizacao, CancellationToken cancelamento)
+        {
+            LocalizacoesHistoricasAdicionadas.Add(localizacao);
             return Task.CompletedTask;
         }
 

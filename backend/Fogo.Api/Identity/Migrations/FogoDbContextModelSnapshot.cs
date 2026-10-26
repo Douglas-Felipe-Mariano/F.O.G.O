@@ -219,6 +219,65 @@ namespace Fogo.Api.Identity.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Fogo.Api.Inventario.CameraPublica", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Cidade")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("cidade");
+
+                    b.Property<string>("Endereco")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("endereco");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("latitude");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("longitude");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("nome");
+
+                    b.Property<string>("UrlStream")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasColumnName("url_stream");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Cidade", "Nome")
+                        .IsUnique();
+
+                    b.HasIndex("Latitude", "Longitude");
+
+                    b.ToTable("cameras_publicas", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_cameras_publicas_coordenadas_completas", "(latitude IS NULL AND longitude IS NULL) OR (latitude IS NOT NULL AND longitude IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_cameras_publicas_latitude", "latitude IS NULL OR latitude BETWEEN -90 AND 90");
+
+                            t.HasCheckConstraint("CK_cameras_publicas_longitude", "longitude IS NULL OR longitude BETWEEN -180 AND 180");
+
+                            t.HasCheckConstraint("CK_cameras_publicas_stream_https", "url_stream LIKE 'https://%'");
+                        });
+                });
+
             modelBuilder.Entity("Fogo.Api.Inventario.Equipamento", b =>
                 {
                     b.Property<Guid>("Id")
@@ -345,6 +404,43 @@ namespace Fogo.Api.Identity.Migrations
                             t.HasCheckConstraint("CK_equipamentos_longitude", "longitude IS NULL OR longitude BETWEEN -180 AND 180");
 
                             t.HasCheckConstraint("CK_equipamentos_manutencao", "(necessita_manutencao = FALSE AND tipo_manutencao IS NULL AND proxima_manutencao IS NULL) OR (necessita_manutencao = TRUE AND ((tipo_manutencao = 'Imediata' AND proxima_manutencao IS NULL) OR (tipo_manutencao IN ('Agendada', 'Periodica') AND proxima_manutencao IS NOT NULL)))");
+                        });
+                });
+
+            modelBuilder.Entity("Fogo.Api.Inventario.HistoricoLocalizacaoAgente", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgenteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agente_id");
+
+                    b.Property<decimal>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("latitude");
+
+                    b.Property<decimal>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("longitude");
+
+                    b.Property<DateTimeOffset>("RegistradaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registrada_em");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgenteId", "RegistradaEm");
+
+                    b.ToTable("historico_localizacoes_agentes", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_historico_localizacoes_agentes_latitude", "latitude BETWEEN -90 AND 90");
+
+                            t.HasCheckConstraint("CK_historico_localizacoes_agentes_longitude", "longitude BETWEEN -180 AND 180");
                         });
                 });
 
@@ -507,6 +603,15 @@ namespace Fogo.Api.Identity.Migrations
                     b.HasOne("Fogo.Api.Identity.UsuarioFogo", null)
                         .WithMany()
                         .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Fogo.Api.Inventario.HistoricoLocalizacaoAgente", b =>
+                {
+                    b.HasOne("Fogo.Api.Inventario.Agente", null)
+                        .WithMany()
+                        .HasForeignKey("AgenteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
