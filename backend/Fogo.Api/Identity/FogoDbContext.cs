@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Fogo.Api.Inventario;
+using Fogo.Api.Operacoes;
 
 namespace Fogo.Api.Identity;
 
@@ -15,6 +16,9 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
     public DbSet<Agente> Agentes => Set<Agente>();
     public DbSet<HistoricoLocalizacaoAgente> HistoricoLocalizacoesAgentes => Set<HistoricoLocalizacaoAgente>();
     public DbSet<CameraPublica> CamerasPublicas => Set<CameraPublica>();
+    public DbSet<SegmentoTransito> SegmentosTransito => Set<SegmentoTransito>();
+    public DbSet<ObservacaoTransito> ObservacoesTransito => Set<ObservacaoTransito>();
+    public DbSet<OcorrenciaAcidente> OcorrenciasAcidente => Set<OcorrenciaAcidente>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -224,6 +228,69 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
             entidade.Property(camera => camera.Longitude).HasColumnName("longitude").HasPrecision(9, 6);
             entidade.HasIndex(camera => new { camera.Cidade, camera.Nome }).IsUnique();
             entidade.HasIndex(camera => new { camera.Latitude, camera.Longitude });
+        });
+
+        builder.Entity<SegmentoTransito>(entidade =>
+        {
+            entidade.ToTable("segmentos_transito", tabela =>
+            {
+                tabela.HasCheckConstraint("CK_segmentos_transito_latitude", "latitude BETWEEN -90 AND 90");
+                tabela.HasCheckConstraint("CK_segmentos_transito_longitude", "longitude BETWEEN -180 AND 180");
+            });
+            entidade.HasKey(segmento => segmento.Id);
+            entidade.Property(segmento => segmento.Id).HasColumnName("id");
+            entidade.Property(segmento => segmento.Nome).HasColumnName("nome").HasMaxLength(180).IsRequired();
+            entidade.Property(segmento => segmento.Cidade).HasColumnName("cidade").HasMaxLength(120).IsRequired();
+            entidade.Property(segmento => segmento.ReferenciaMapa).HasColumnName("referencia_mapa").HasMaxLength(240).IsRequired();
+            entidade.Property(segmento => segmento.Latitude).HasColumnName("latitude").HasPrecision(9, 6).IsRequired();
+            entidade.Property(segmento => segmento.Longitude).HasColumnName("longitude").HasPrecision(9, 6).IsRequired();
+            entidade.Property(segmento => segmento.OrigemDados).HasColumnName("origem_dados").HasConversion<string>().HasMaxLength(20).IsRequired();
+            entidade.HasIndex(segmento => segmento.Cidade);
+        });
+
+        builder.Entity<ObservacaoTransito>(entidade =>
+        {
+            entidade.ToTable("observacoes_transito", tabela =>
+            {
+                tabela.HasCheckConstraint("CK_observacoes_transito_volume", "veiculos_ultima_hora >= 0");
+                tabela.HasCheckConstraint("CK_observacoes_transito_velocidade", "velocidade_media_kmh >= 0");
+                tabela.HasCheckConstraint("CK_observacoes_transito_congestionamento", "congestionamento_percentual BETWEEN 0 AND 100");
+            });
+            entidade.HasKey(observacao => observacao.Id);
+            entidade.Property(observacao => observacao.Id).HasColumnName("id");
+            entidade.Property(observacao => observacao.SegmentoId).HasColumnName("segmento_id").IsRequired();
+            entidade.Property(observacao => observacao.RegistradaEm).HasColumnName("registrada_em").IsRequired();
+            entidade.Property(observacao => observacao.VeiculosUltimaHora).HasColumnName("veiculos_ultima_hora").IsRequired();
+            entidade.Property(observacao => observacao.VelocidadeMediaKmh).HasColumnName("velocidade_media_kmh").HasPrecision(6, 2).IsRequired();
+            entidade.Property(observacao => observacao.CongestionamentoPercentual).HasColumnName("congestionamento_percentual").IsRequired();
+            entidade.Property(observacao => observacao.OrigemDados).HasColumnName("origem_dados").HasConversion<string>().HasMaxLength(20).IsRequired();
+            entidade.HasIndex(observacao => new { observacao.SegmentoId, observacao.RegistradaEm }).IsUnique();
+            entidade.HasOne<SegmentoTransito>().WithMany().HasForeignKey(observacao => observacao.SegmentoId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<OcorrenciaAcidente>(entidade =>
+        {
+            entidade.ToTable("ocorrencias_acidentes", tabela =>
+            {
+                tabela.HasCheckConstraint("CK_ocorrencias_acidentes_latitude", "latitude BETWEEN -90 AND 90");
+                tabela.HasCheckConstraint("CK_ocorrencias_acidentes_longitude", "longitude BETWEEN -180 AND 180");
+            });
+            entidade.HasKey(acidente => acidente.Id);
+            entidade.Property(acidente => acidente.Id).HasColumnName("id");
+            entidade.Property(acidente => acidente.LocalDescricao).HasColumnName("local_descricao").HasMaxLength(240).IsRequired();
+            entidade.Property(acidente => acidente.Cidade).HasColumnName("cidade").HasMaxLength(120).IsRequired();
+            entidade.Property(acidente => acidente.Latitude).HasColumnName("latitude").HasPrecision(9, 6).IsRequired();
+            entidade.Property(acidente => acidente.Longitude).HasColumnName("longitude").HasPrecision(9, 6).IsRequired();
+            entidade.Property(acidente => acidente.Grau).HasColumnName("grau").HasConversion<string>().HasMaxLength(20).IsRequired();
+            entidade.Property(acidente => acidente.ImpactoTransito).HasColumnName("impacto_transito").HasConversion<string>().HasMaxLength(30).IsRequired();
+            entidade.Property(acidente => acidente.HaFeridos).HasColumnName("ha_feridos").IsRequired();
+            entidade.Property(acidente => acidente.Situacao).HasColumnName("situacao").HasConversion<string>().HasMaxLength(30).IsRequired();
+            entidade.Property(acidente => acidente.RegistradoEm).HasColumnName("registrado_em").IsRequired();
+            entidade.Property(acidente => acidente.DespachoSolicitadoEm).HasColumnName("despacho_solicitado_em");
+            entidade.Property(acidente => acidente.AgenteDesignadoId).HasColumnName("agente_designado_id");
+            entidade.Property(acidente => acidente.SocorroSolicitadoEm).HasColumnName("socorro_solicitado_em");
+            entidade.HasIndex(acidente => new { acidente.Situacao, acidente.RegistradoEm });
+            entidade.HasOne<Agente>().WithMany().HasForeignKey(acidente => acidente.AgenteDesignadoId).OnDelete(DeleteBehavior.SetNull);
         });
     }
 

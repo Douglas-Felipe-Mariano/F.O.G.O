@@ -96,6 +96,25 @@ public sealed record TrajetoAgenteResposta(
     string Mensagem,
     IReadOnlyCollection<HistoricoLocalizacaoAgenteResposta> Localizacoes);
 
+public sealed record UltimasLocalizacoesAgenteResposta(
+    Guid AgenteId,
+    string NomeAgente,
+    OrigemRegistro OrigemDados,
+    bool HistoricoDisponivel,
+    string Mensagem,
+    IReadOnlyCollection<HistoricoLocalizacaoAgenteResposta> Localizacoes);
+
+public sealed record HistoricoAgentePaginadoResposta(
+    Guid AgenteId,
+    string NomeAgente,
+    OrigemRegistro OrigemDados,
+    int Deslocamento,
+    int Limite,
+    int TotalRegistros,
+    bool ResultadoTruncado,
+    string Mensagem,
+    IReadOnlyCollection<HistoricoLocalizacaoAgenteResposta> Localizacoes);
+
 public sealed record MapaAgentesResposta(
     int TotalComCoordenadas,
     int Limite,

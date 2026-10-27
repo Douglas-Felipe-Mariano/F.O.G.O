@@ -153,6 +153,71 @@ public sealed class AgenteServiceTests
     }
 
     [Fact]
+    public async Task ConsultarUltimasLocalizacoesAsync_RetornaOrdemCronologicaEIdentificaDadosDemonstrativos()
+    {
+        var agente = CriarAgente();
+        agente.OrigemDados = OrigemRegistro.Simulado;
+        var primeiroRegistro = new HistoricoLocalizacaoAgente
+        {
+            AgenteId = agente.Id,
+            Latitude = -21.9m,
+            Longitude = -50.5m,
+            RegistradaEm = new DateTimeOffset(2026, 10, 26, 13, 0, 0, TimeSpan.Zero)
+        };
+        var registroMaisRecente = new HistoricoLocalizacaoAgente
+        {
+            AgenteId = agente.Id,
+            Latitude = -21.8m,
+            Longitude = -50.4m,
+            RegistradaEm = new DateTimeOffset(2026, 10, 26, 14, 0, 0, TimeSpan.Zero)
+        };
+        var repositorio = new RepositorioAgentesFalso
+        {
+            AgenteParaAtualizacao = agente,
+            HistoricoParaConsulta = [registroMaisRecente, primeiroRegistro]
+        };
+
+        var resposta = await new HistoricoAgentesService(repositorio)
+            .ConsultarUltimasLocalizacoesAsync(agente.Id, 10, CancellationToken.None);
+
+        Assert.NotNull(resposta);
+        Assert.True(resposta.HistoricoDisponivel);
+        Assert.Equal(OrigemRegistro.Simulado, resposta.OrigemDados);
+        Assert.Contains("demonstrativo", resposta.Mensagem, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([primeiroRegistro.Id, registroMaisRecente.Id], resposta.Localizacoes.Select(item => item.Id));
+        Assert.Equal(10, repositorio.LimiteHistoricoRecente);
+    }
+
+    [Fact]
+    public async Task ConsultarHistoricoPaginadoAsync_FiltraPeriodoEPaginaTodosOsRegistros()
+    {
+        var agente = CriarAgente();
+        var repositorio = new RepositorioAgentesFalso
+        {
+            AgenteParaAtualizacao = agente,
+            HistoricoParaConsulta =
+            [
+                new HistoricoLocalizacaoAgente { AgenteId = agente.Id, Latitude = -21m, Longitude = -50m, RegistradaEm = new DateTimeOffset(2026, 10, 25, 23, 59, 0, TimeSpan.Zero) },
+                new HistoricoLocalizacaoAgente { AgenteId = agente.Id, Latitude = -22m, Longitude = -51m, RegistradaEm = new DateTimeOffset(2026, 10, 26, 10, 0, 0, TimeSpan.Zero) },
+                new HistoricoLocalizacaoAgente { AgenteId = agente.Id, Latitude = -23m, Longitude = -52m, RegistradaEm = new DateTimeOffset(2026, 10, 26, 11, 0, 0, TimeSpan.Zero) }
+            ]
+        };
+
+        var resposta = await new HistoricoAgentesService(repositorio).ConsultarHistoricoPaginadoAsync(
+            agente.Id,
+            new DateOnly(2026, 10, 26),
+            new DateOnly(2026, 10, 26),
+            deslocamento: 1,
+            limite: 1,
+            CancellationToken.None);
+
+        Assert.NotNull(resposta);
+        Assert.Equal(2, resposta.TotalRegistros);
+        Assert.False(resposta.ResultadoTruncado);
+        Assert.Equal(-23m, Assert.Single(resposta.Localizacoes).Latitude);
+    }
+
+    [Fact]
     public async Task ConsultarIndicadoresAsync_SomaContagensInformadas()
     {
         IReadOnlyCollection<ContagemSituacaoAgente> contagens =
@@ -226,6 +291,7 @@ public sealed class AgenteServiceTests
         public List<HistoricoLocalizacaoAgente> LocalizacoesHistoricasAdicionadas { get; } = [];
         public IReadOnlyCollection<HistoricoLocalizacaoAgente> HistoricoParaConsulta { get; init; } = [];
         public DateOnly? DataHistoricoSolicitada { get; private set; }
+        public int LimiteHistoricoRecente { get; private set; }
 
         public Task<int> ContarAsync(FiltrosAgentes filtros, CancellationToken cancelamento)
         {
@@ -262,6 +328,37 @@ public sealed class AgenteServiceTests
                 HistoricoParaConsulta.Where(localizacao => localizacao.AgenteId == agenteId
                     && DateOnly.FromDateTime(localizacao.RegistradaEm.UtcDateTime) == data).ToArray());
         }
+
+        public Task<IReadOnlyCollection<HistoricoLocalizacaoAgente>> ListarHistoricoRecenteAsync(Guid agenteId, int limite, CancellationToken cancelamento)
+        {
+            LimiteHistoricoRecente = limite;
+            return Task.FromResult<IReadOnlyCollection<HistoricoLocalizacaoAgente>>(
+                HistoricoParaConsulta.Where(localizacao => localizacao.AgenteId == agenteId)
+                    .OrderByDescending(localizacao => localizacao.RegistradaEm)
+                    .Take(limite)
+                    .ToArray());
+        }
+
+        public Task<int> ContarHistoricoAsync(Guid agenteId, DateTimeOffset? inicio, DateTimeOffset? fimExclusivo, CancellationToken cancelamento) =>
+            Task.FromResult(FiltrarHistorico(agenteId, inicio, fimExclusivo).Count());
+
+        public Task<IReadOnlyCollection<HistoricoLocalizacaoAgente>> ListarHistoricoPaginadoAsync(
+            Guid agenteId,
+            DateTimeOffset? inicio,
+            DateTimeOffset? fimExclusivo,
+            int deslocamento,
+            int limite,
+            CancellationToken cancelamento) =>
+            Task.FromResult<IReadOnlyCollection<HistoricoLocalizacaoAgente>>(FiltrarHistorico(agenteId, inicio, fimExclusivo)
+                .OrderBy(localizacao => localizacao.RegistradaEm)
+                .Skip(deslocamento)
+                .Take(limite)
+                .ToArray());
+
+        private IReadOnlyCollection<HistoricoLocalizacaoAgente> FiltrarHistorico(Guid agenteId, DateTimeOffset? inicio, DateTimeOffset? fimExclusivo) =>
+            HistoricoParaConsulta.Where(localizacao => localizacao.AgenteId == agenteId
+                && (!inicio.HasValue || localizacao.RegistradaEm >= inicio.Value)
+                && (!fimExclusivo.HasValue || localizacao.RegistradaEm < fimExclusivo.Value)).ToArray();
 
         public Task AdicionarLocalizacaoHistoricaAsync(HistoricoLocalizacaoAgente localizacao, CancellationToken cancelamento)
         {

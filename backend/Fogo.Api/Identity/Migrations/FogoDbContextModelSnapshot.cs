@@ -451,6 +451,189 @@ namespace Fogo.Api.Identity.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Fogo.Api.Operacoes.ObservacaoTransito", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("CongestionamentoPercentual")
+                        .HasColumnType("integer")
+                        .HasColumnName("congestionamento_percentual");
+
+                    b.Property<string>("OrigemDados")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("origem_dados");
+
+                    b.Property<DateTimeOffset>("RegistradaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registrada_em");
+
+                    b.Property<Guid>("SegmentoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("segmento_id");
+
+                    b.Property<int>("VeiculosUltimaHora")
+                        .HasColumnType("integer")
+                        .HasColumnName("veiculos_ultima_hora");
+
+                    b.Property<decimal>("VelocidadeMediaKmh")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("velocidade_media_kmh");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SegmentoId", "RegistradaEm")
+                        .IsUnique();
+
+                    b.ToTable("observacoes_transito", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_observacoes_transito_congestionamento", "congestionamento_percentual BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("CK_observacoes_transito_velocidade", "velocidade_media_kmh >= 0");
+
+                            t.HasCheckConstraint("CK_observacoes_transito_volume", "veiculos_ultima_hora >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Fogo.Api.Operacoes.OcorrenciaAcidente", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AgenteDesignadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agente_designado_id");
+
+                    b.Property<string>("Cidade")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("cidade");
+
+                    b.Property<DateTimeOffset?>("DespachoSolicitadoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("despacho_solicitado_em");
+
+                    b.Property<string>("Grau")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("grau");
+
+                    b.Property<bool>("HaFeridos")
+                        .HasColumnType("boolean")
+                        .HasColumnName("ha_feridos");
+
+                    b.Property<string>("ImpactoTransito")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("impacto_transito");
+
+                    b.Property<decimal>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("latitude");
+
+                    b.Property<string>("LocalDescricao")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("local_descricao");
+
+                    b.Property<decimal>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("longitude");
+
+                    b.Property<DateTimeOffset>("RegistradoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registrado_em");
+
+                    b.Property<string>("Situacao")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("situacao");
+
+                    b.Property<DateTimeOffset?>("SocorroSolicitadoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("socorro_solicitado_em");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgenteDesignadoId");
+
+                    b.HasIndex("Situacao", "RegistradoEm");
+
+                    b.ToTable("ocorrencias_acidentes", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ocorrencias_acidentes_latitude", "latitude BETWEEN -90 AND 90");
+
+                            t.HasCheckConstraint("CK_ocorrencias_acidentes_longitude", "longitude BETWEEN -180 AND 180");
+                        });
+                });
+
+            modelBuilder.Entity("Fogo.Api.Operacoes.SegmentoTransito", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Cidade")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("cidade");
+
+                    b.Property<decimal>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("latitude");
+
+                    b.Property<decimal>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("longitude");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("nome");
+
+                    b.Property<string>("OrigemDados")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("origem_dados");
+
+                    b.Property<string>("ReferenciaMapa")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("referencia_mapa");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Cidade");
+
+                    b.ToTable("segmentos_transito", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_segmentos_transito_latitude", "latitude BETWEEN -90 AND 90");
+
+                            t.HasCheckConstraint("CK_segmentos_transito_longitude", "longitude BETWEEN -180 AND 180");
+                        });
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -621,6 +804,23 @@ namespace Fogo.Api.Identity.Migrations
                         .HasForeignKey("AgenteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Fogo.Api.Operacoes.ObservacaoTransito", b =>
+                {
+                    b.HasOne("Fogo.Api.Operacoes.SegmentoTransito", null)
+                        .WithMany()
+                        .HasForeignKey("SegmentoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Fogo.Api.Operacoes.OcorrenciaAcidente", b =>
+                {
+                    b.HasOne("Fogo.Api.Inventario.Agente", null)
+                        .WithMany()
+                        .HasForeignKey("AgenteDesignadoId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

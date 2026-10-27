@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Fogo.Api;
 using Fogo.Api.Application.Inventario;
+using Fogo.Api.Application.Operacoes;
 using Fogo.Api.Identity;
 using Fogo.Api.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -70,6 +71,7 @@ builder.Services.AddScoped<IAgenteRepository, AgenteRepository>();
 builder.Services.AddScoped<AgenteService>();
 builder.Services.AddScoped<HistoricoAgentesService>();
 builder.Services.AddScoped<CameraPublicaService>();
+builder.Services.AddScoped<OperacoesService>();
 builder.Services.AddScoped<ProvisionadorPrimeiroUsuario>();
 builder.Services.AddScoped<IPublicadorEventosEquipamentos, PublicadorEventosEquipamentos>();
 builder.Services.AddScoped<IPublicadorEventosAgentes, PublicadorEventosAgentes>();
@@ -143,6 +145,55 @@ app.MapGet("/api/agentes/{id:guid}/trajeto", async (
     })
     .WithName("ConsultarTrajetoDiarioAgente")
     .WithSummary("Consulta os registros de posição de um agente na data solicitada; não representa telemetria em tempo real.");
+
+app.MapGet("/api/agentes/{id:guid}/ultimas-localizacoes", async (
+        Guid id,
+        int? limite,
+        HistoricoAgentesService historico,
+        CancellationToken cancelamento) =>
+    {
+        var quantidade = limite ?? 10;
+        if (quantidade is < 1 or > 50)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["limite"] = ["O limite deve estar entre 1 e 50."]
+            });
+        }
+
+        var resultado = await historico.ConsultarUltimasLocalizacoesAsync(id, quantidade, cancelamento);
+        return resultado is null ? Results.NotFound() : Results.Ok(resultado);
+    })
+    .RequireAuthorization()
+    .WithName("ConsultarUltimasLocalizacoesAgente")
+    .WithSummary("Consulta os últimos registros armazenados de localização de um agente; não é rastreamento em tempo real.");
+
+app.MapGet("/api/agentes/{id:guid}/historico-localizacoes", async (
+        Guid id,
+        DateOnly? inicio,
+        DateOnly? fim,
+        int? deslocamento,
+        int? limite,
+        HistoricoAgentesService historico,
+        CancellationToken cancelamento) =>
+    {
+        var pagina = deslocamento ?? 0;
+        var tamanho = limite ?? 100;
+        if (pagina < 0 || tamanho is < 1 or > 500 || (inicio.HasValue && fim.HasValue && inicio > fim))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["filtros"] = ["Informe um período válido, deslocamento não negativo e limite entre 1 e 500."]
+            });
+        }
+
+        var resultado = await historico.ConsultarHistoricoPaginadoAsync(
+            id, inicio, fim, pagina, tamanho, cancelamento);
+        return resultado is null ? Results.NotFound() : Results.Ok(resultado);
+    })
+    .RequireAuthorization()
+    .WithName("ConsultarHistoricoLocalizacoesAgente")
+    .WithSummary("Consulta o histórico completo de posições de um agente com filtro por período e paginação.");
 
 app.MapGet("/api/autenticacao/eu", (System.Security.Claims.ClaimsPrincipal usuario) =>
         Results.Ok(new { id = usuario.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value }))

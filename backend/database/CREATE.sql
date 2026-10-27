@@ -327,3 +327,66 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261027051631_AdicionarTransitoEAcidentes') THEN
+    CREATE TABLE segmentos_transito (
+        id uuid NOT NULL,
+        nome character varying(180) NOT NULL,
+        cidade character varying(120) NOT NULL,
+        referencia_mapa character varying(240) NOT NULL,
+        latitude numeric(9,6) NOT NULL,
+        longitude numeric(9,6) NOT NULL,
+        origem_dados character varying(20) NOT NULL,
+        CONSTRAINT "PK_segmentos_transito" PRIMARY KEY (id),
+        CONSTRAINT "CK_segmentos_transito_latitude" CHECK (latitude BETWEEN -90 AND 90),
+        CONSTRAINT "CK_segmentos_transito_longitude" CHECK (longitude BETWEEN -180 AND 180)
+    );
+
+    CREATE TABLE observacoes_transito (
+        id uuid NOT NULL,
+        segmento_id uuid NOT NULL,
+        registrada_em timestamp with time zone NOT NULL,
+        veiculos_ultima_hora integer NOT NULL,
+        velocidade_media_kmh numeric(6,2) NOT NULL,
+        congestionamento_percentual integer NOT NULL,
+        origem_dados character varying(20) NOT NULL,
+        CONSTRAINT "PK_observacoes_transito" PRIMARY KEY (id),
+        CONSTRAINT "CK_observacoes_transito_volume" CHECK (veiculos_ultima_hora >= 0),
+        CONSTRAINT "CK_observacoes_transito_velocidade" CHECK (velocidade_media_kmh >= 0),
+        CONSTRAINT "CK_observacoes_transito_congestionamento" CHECK (congestionamento_percentual BETWEEN 0 AND 100),
+        CONSTRAINT "FK_observacoes_transito_segmentos_transito_segmento_id" FOREIGN KEY (segmento_id) REFERENCES segmentos_transito (id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE ocorrencias_acidentes (
+        id uuid NOT NULL,
+        local_descricao character varying(240) NOT NULL,
+        cidade character varying(120) NOT NULL,
+        latitude numeric(9,6) NOT NULL,
+        longitude numeric(9,6) NOT NULL,
+        grau character varying(20) NOT NULL,
+        impacto_transito character varying(30) NOT NULL,
+        ha_feridos boolean NOT NULL,
+        situacao character varying(30) NOT NULL,
+        registrado_em timestamp with time zone NOT NULL,
+        despacho_solicitado_em timestamp with time zone,
+        agente_designado_id uuid,
+        socorro_solicitado_em timestamp with time zone,
+        CONSTRAINT "PK_ocorrencias_acidentes" PRIMARY KEY (id),
+        CONSTRAINT "CK_ocorrencias_acidentes_latitude" CHECK (latitude BETWEEN -90 AND 90),
+        CONSTRAINT "CK_ocorrencias_acidentes_longitude" CHECK (longitude BETWEEN -180 AND 180),
+        CONSTRAINT "FK_ocorrencias_acidentes_agentes_agente_designado_id" FOREIGN KEY (agente_designado_id) REFERENCES agentes (id) ON DELETE SET NULL
+    );
+
+    CREATE UNIQUE INDEX "IX_observacoes_transito_segmento_id_registrada_em" ON observacoes_transito (segmento_id, registrada_em);
+    CREATE INDEX "IX_ocorrencias_acidentes_agente_designado_id" ON ocorrencias_acidentes (agente_designado_id);
+    CREATE INDEX "IX_ocorrencias_acidentes_situacao_registrado_em" ON ocorrencias_acidentes (situacao, registrado_em);
+    CREATE INDEX "IX_segmentos_transito_cidade" ON segmentos_transito (cidade);
+    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+    VALUES ('20261027051631_AdicionarTransitoEAcidentes', '10.0.13');
+    END IF;
+END $EF$;
+COMMIT;
+

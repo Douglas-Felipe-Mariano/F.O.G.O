@@ -53,6 +53,39 @@ public sealed class AgenteRepository(FogoDbContext banco) : IAgenteRepository
             .ToArrayAsync(cancelamento);
     }
 
+    public async Task<IReadOnlyCollection<HistoricoLocalizacaoAgente>> ListarHistoricoRecenteAsync(
+        Guid agenteId,
+        int limite,
+        CancellationToken cancelamento) =>
+        await banco.HistoricoLocalizacoesAgentes.AsNoTracking()
+            .Where(localizacao => localizacao.AgenteId == agenteId)
+            .OrderByDescending(localizacao => localizacao.RegistradaEm)
+            .ThenByDescending(localizacao => localizacao.Id)
+            .Take(limite)
+            .ToArrayAsync(cancelamento);
+
+    public Task<int> ContarHistoricoAsync(
+        Guid agenteId,
+        DateTimeOffset? inicio,
+        DateTimeOffset? fimExclusivo,
+        CancellationToken cancelamento) =>
+        AplicarFiltrosHistorico(banco.HistoricoLocalizacoesAgentes.AsNoTracking(), agenteId, inicio, fimExclusivo)
+            .CountAsync(cancelamento);
+
+    public async Task<IReadOnlyCollection<HistoricoLocalizacaoAgente>> ListarHistoricoPaginadoAsync(
+        Guid agenteId,
+        DateTimeOffset? inicio,
+        DateTimeOffset? fimExclusivo,
+        int deslocamento,
+        int limite,
+        CancellationToken cancelamento) =>
+        await AplicarFiltrosHistorico(banco.HistoricoLocalizacoesAgentes.AsNoTracking(), agenteId, inicio, fimExclusivo)
+            .OrderBy(localizacao => localizacao.RegistradaEm)
+            .ThenBy(localizacao => localizacao.Id)
+            .Skip(deslocamento)
+            .Take(limite)
+            .ToArrayAsync(cancelamento);
+
     public Task AdicionarLocalizacaoHistoricaAsync(HistoricoLocalizacaoAgente localizacao, CancellationToken cancelamento)
     {
         banco.HistoricoLocalizacoesAgentes.Add(localizacao);
@@ -84,6 +117,26 @@ public sealed class AgenteRepository(FogoDbContext banco) : IAgenteRepository
         if (filtros.Situacao.HasValue)
         {
             consulta = consulta.Where(agente => agente.Situacao == filtros.Situacao.Value);
+        }
+
+        return consulta;
+    }
+
+    private static IQueryable<HistoricoLocalizacaoAgente> AplicarFiltrosHistorico(
+        IQueryable<HistoricoLocalizacaoAgente> consulta,
+        Guid agenteId,
+        DateTimeOffset? inicio,
+        DateTimeOffset? fimExclusivo)
+    {
+        consulta = consulta.Where(localizacao => localizacao.AgenteId == agenteId);
+        if (inicio.HasValue)
+        {
+            consulta = consulta.Where(localizacao => localizacao.RegistradaEm >= inicio.Value);
+        }
+
+        if (fimExclusivo.HasValue)
+        {
+            consulta = consulta.Where(localizacao => localizacao.RegistradaEm < fimExclusivo.Value);
         }
 
         return consulta;
