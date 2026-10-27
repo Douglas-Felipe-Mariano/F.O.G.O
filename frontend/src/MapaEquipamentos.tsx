@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { divIcon, LatLngBounds } from 'leaflet';
 import { CameraPublica } from './CamerasPublicas';
+import { AcidenteMapa, TransitoMapa } from './OperacoesTipos';
 import 'leaflet/dist/leaflet.css';
 import './MapaEquipamentos.css';
 import './MapaMarcadores.css';
@@ -43,17 +44,27 @@ export type LocalizacaoAgente = {
 };
 
 type LocalizacaoUsuario = { latitude: number; longitude: number };
-export type PontoHistoricoAgente = { latitude: number; longitude: number; registradaEm: string };
+export type CameraMarcador = {
+  chave: string;
+  cidade: string;
+  latitude: number;
+  longitude: number;
+  aproximada: boolean;
+  cameras: CameraPublica[];
+};
 type Props = {
   equipamentos: LocalizacaoEquipamento[];
   agentes?: LocalizacaoAgente[];
-  cameras?: CameraPublica[];
+  cameras?: CameraMarcador[];
+  transito?: TransitoMapa[];
+  acidentes?: AcidenteMapa[];
+  selecionarLocalAcidente?: boolean;
+  onSelecionarLocalAcidente?: (coordenadas: LocalizacaoUsuario) => void;
   localizacaoUsuario?: LocalizacaoUsuario | null;
   enquadramento?: 'usuario' | 'todos';
-  trajetoAgente?: { nomeAgente: string; localizacoes: PontoHistoricoAgente[] } | null;
   onEditarEquipamento?: (id: string) => void;
   onEditarAgente?: (id: string) => void;
-  onVerTrajetoAgente?: (id: string) => void;
+  onVerHistoricoAgente?: (id: string) => void;
   onReproduzirCamera?: (camera: CameraPublica) => void;
 };
 
@@ -106,13 +117,15 @@ function criarIconeAgente(situacao: string) {
     popupAnchor: [0, -38],
   });
 }
-const iconeCamera = divIcon({
-  className: 'icone-leaflet-container',
-  html: `<span class="marcador-mapa marcador-camera">${iconeCameraSvg}</span>`,
-  iconSize: [40, 40],
-  iconAnchor: [20, 20],
-  popupAnchor: [0, -22],
-});
+function criarIconeCamera(aproximada: boolean, quantidade: number) {
+  return divIcon({
+    className: 'icone-leaflet-container',
+    html: `<span class="marcador-mapa marcador-camera${aproximada ? ' marcador-camera-aproximada' : ''}">${iconeCameraSvg}${quantidade > 1 || aproximada ? `<b>${quantidade}</b>` : ''}</span>`,
+    iconSize: [42, 42],
+    iconAnchor: [21, 21],
+    popupAnchor: [0, -22],
+  });
+}
 const iconeUsuario = divIcon({
   className: 'icone-leaflet-container',
   html: '<span class="marcador-usuario"><i></i></span>',
@@ -120,16 +133,44 @@ const iconeUsuario = divIcon({
   iconAnchor: [16, 16],
 });
 
-function AjustarEnquadramento({ equipamentos, agentes = [], cameras = [], localizacaoUsuario, enquadramento = 'usuario', trajetoAgente }: Props) {
+function CapturarLocalAcidente({ ativo, aoSelecionar }: { ativo?: boolean; aoSelecionar?: (coordenadas: LocalizacaoUsuario) => void }) {
+  useMapEvents({
+    click(evento) {
+      if (ativo) aoSelecionar?.({ latitude: evento.latlng.lat, longitude: evento.latlng.lng });
+    },
+  });
+  return null;
+}
+
+function criarIconeTransito(percentual: number) {
+  const nivel = percentual >= 75 ? 'alto' : percentual >= 45 ? 'medio' : 'baixo';
+  return divIcon({
+    className: 'icone-leaflet-container',
+    html: `<span class="marcador-transito transito-${nivel}">${percentual}%</span>`,
+    iconSize: [42, 42],
+    iconAnchor: [21, 37],
+    popupAnchor: [0, -34],
+  });
+}
+
+const iconeAcidente = divIcon({
+  className: 'icone-leaflet-container',
+  html: '<span class="marcador-acidente"><strong>!</strong></span>',
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -18],
+});
+
+function AjustarEnquadramento({ equipamentos, agentes = [], cameras = [], transito = [], acidentes = [], localizacaoUsuario, enquadramento = 'usuario' }: Props) {
   const mapa = useMap();
 
   useEffect(() => {
     const pontos = [
       ...equipamentos.map(({ latitude, longitude }) => [latitude, longitude] as [number, number]),
       ...agentes.map(({ latitude, longitude }) => [latitude, longitude] as [number, number]),
-      ...cameras.filter((camera) => camera.latitude !== null && camera.longitude !== null)
-        .map((camera) => [camera.latitude!, camera.longitude!] as [number, number]),
-      ...(trajetoAgente?.localizacoes.map(({ latitude, longitude }) => [latitude, longitude] as [number, number]) ?? []),
+      ...cameras.map((camera) => [camera.latitude, camera.longitude] as [number, number]),
+      ...transito.map(({ latitude, longitude }) => [latitude, longitude] as [number, number]),
+      ...acidentes.map(({ latitude, longitude }) => [latitude, longitude] as [number, number]),
     ];
     if (enquadramento === 'usuario' && localizacaoUsuario) {
       mapa.setView([localizacaoUsuario.latitude, localizacaoUsuario.longitude], 14);
@@ -147,20 +188,31 @@ function AjustarEnquadramento({ equipamentos, agentes = [], cameras = [], locali
     }
 
     mapa.fitBounds(new LatLngBounds(pontos), { padding: [36, 36], maxZoom: 13 });
-  }, [agentes, cameras, enquadramento, equipamentos, localizacaoUsuario, mapa, trajetoAgente]);
+  }, [agentes, acidentes, cameras, enquadramento, equipamentos, localizacaoUsuario, mapa, transito]);
 
   return null;
 }
 
-export default function MapaEquipamentos({ equipamentos, agentes = [], cameras = [], localizacaoUsuario, enquadramento = 'usuario', trajetoAgente, onEditarEquipamento, onEditarAgente, onVerTrajetoAgente, onReproduzirCamera }: Props) {
+export default function MapaEquipamentos({ equipamentos, agentes = [], cameras = [], transito = [], acidentes = [], selecionarLocalAcidente = false, onSelecionarLocalAcidente, localizacaoUsuario, enquadramento = 'usuario', onEditarEquipamento, onEditarAgente, onVerHistoricoAgente, onReproduzirCamera }: Props) {
   return (
-    <div className="mapa-equipamentos" aria-label="Mapa de equipamentos e agentes com coordenadas">
+    <div className={`mapa-equipamentos${selecionarLocalAcidente ? ' mapa-selecionando-acidente' : ''}`} aria-label="Mapa de equipamentos, agentes, trânsito e ocorrências georreferenciadas">
       <MapContainer center={centroTupa} zoom={12} scrollWheelZoom className="mapa-leaflet">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <AjustarEnquadramento equipamentos={equipamentos} agentes={agentes} cameras={cameras} localizacaoUsuario={localizacaoUsuario} enquadramento={enquadramento} trajetoAgente={trajetoAgente} />
+        <AjustarEnquadramento equipamentos={equipamentos} agentes={agentes} cameras={cameras} transito={transito} acidentes={acidentes} localizacaoUsuario={localizacaoUsuario} enquadramento={enquadramento} />
+        <CapturarLocalAcidente ativo={selecionarLocalAcidente} aoSelecionar={onSelecionarLocalAcidente} />
+        {transito.map((item) => (
+          <Marker key={`transito-${item.id}`} position={[item.latitude, item.longitude]} icon={criarIconeTransito(item.congestionamentoPercentual)}>
+            <Popup><div className="popup-equipamento"><strong>Trânsito · {item.cidade}</strong><span>Volume demonstrativo: {item.veiculosUltimaHora} veículos na última hora.</span><span>Velocidade média: {item.velocidadeMediaKmh} km/h · congestionamento: {item.congestionamentoPercentual}%.</span><span>Próxima hora: {item.veiculosPrevistosProximaHora} veículos · {item.congestionamentoPrevistoPercentual}% projetado.</span><span>Confiança heurística: {item.confianca} · {item.amostrasHistoricas} amostras comparáveis.</span><strong className="popup-fonte">SIMULADO · {item.referenciaMapa}. Não é medição em tempo real.</strong></div></Popup>
+          </Marker>
+        ))}
+        {acidentes.map((acidente) => (
+          <Marker key={`acidente-${acidente.id}`} position={[acidente.latitude, acidente.longitude]} icon={iconeAcidente} zIndexOffset={1800}>
+            <Popup><div className="popup-equipamento"><strong>Acidente · {acidente.grau}</strong><span>{acidente.localDescricao} · {acidente.cidade}</span><span>Impacto no trânsito: {acidente.impactoTransito} · feridos: {acidente.haFeridos ? 'informados' : 'não informados'}.</span><span>Situação: {acidente.situacao}.</span><span>Registro interno · não substitui comunicação aos serviços de emergência.</span></div></Popup>
+          </Marker>
+        ))}
         {equipamentos.map((equipamento) => (
           <Marker
             key={equipamento.id}
@@ -199,30 +251,24 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
                 <span>{agente.categoriaProfissional}</span>
                 <span>{agente.situacao === 'disponivel' ? 'Disponível' : agente.situacao === 'emAtendimento' ? 'Em atendimento' : 'Indisponível'} · situação informada</span>
                 <span>{agente.baseOperacional}</span>
-                {agente.origemDados === 'simulado' && <strong className="popup-aviso">DADO SIMULADO · agente ilustrativo, não representa equipe real.</strong>}
+                {agente.origemDados === 'simulado' && <strong className="popup-fonte">Demonstração · posição ilustrativa, sem rastreamento real.</strong>}
                 {onEditarAgente && <button type="button" className="mapa-acao-popup" onClick={() => onEditarAgente(agente.id)}>Editar agente</button>}
-                {onVerTrajetoAgente && <button type="button" className="mapa-acao-popup mapa-acao-secundaria" onClick={() => onVerTrajetoAgente(agente.id)}>Ver posições da data escolhida</button>}
+                {onVerHistoricoAgente && <button type="button" className="mapa-acao-popup mapa-acao-secundaria" onClick={() => onVerHistoricoAgente(agente.id)}>Ver histórico de localizações</button>}
               </div>
             </Popup>
           </Marker>
         ))}
-        {cameras.filter((camera) => camera.latitude !== null && camera.longitude !== null).map((camera) => (
-          <Marker key={`camera-${camera.id}`} position={[camera.latitude!, camera.longitude!]} icon={iconeCamera}>
+        {cameras.map((marcador) => (
+          <Marker key={`camera-${marcador.chave}`} position={[marcador.latitude, marcador.longitude]} icon={criarIconeCamera(marcador.aproximada, marcador.cameras.length)}>
             <Popup>
               <div className="popup-equipamento">
-                <strong>{camera.nome}</strong>
-                <span>{camera.cidade}{camera.endereco ? ` · ${camera.endereco}` : ''}</span>
-                {onReproduzirCamera && <button type="button" className="mapa-acao-popup mapa-camera-play" onClick={() => onReproduzirCamera(camera)}>▶ Assistir ao vivo</button>}
+                <strong>{marcador.aproximada ? `${marcador.cameras.length} câmera(s) · referência municipal` : marcador.cameras[0].nome}</strong>
+                <span>{marcador.cidade}{marcador.aproximada ? ' · centro municipal aproximado; não é a posição individual das câmeras' : marcador.cameras[0].endereco ? ` · ${marcador.cameras[0].endereco}` : ''}</span>
+                {marcador.cameras.map((camera) => <div className="popup-camera-item" key={camera.id}><span>{camera.nome}</span>{onReproduzirCamera && <button type="button" className="mapa-acao-popup mapa-camera-play" onClick={() => onReproduzirCamera(camera)}>▶ Assistir</button>}</div>)}
               </div>
             </Popup>
           </Marker>
         ))}
-        {trajetoAgente && trajetoAgente.localizacoes.length > 0 && (
-          <Polyline
-            positions={trajetoAgente.localizacoes.map(({ latitude, longitude }) => [latitude, longitude] as [number, number])}
-            pathOptions={{ color: '#f0ae62', weight: 4, opacity: 0.9 }}
-          />
-        )}
         {localizacaoUsuario && (
           <Marker position={[localizacaoUsuario.latitude, localizacaoUsuario.longitude]} icon={iconeUsuario} zIndexOffset={1000}>
             <Popup><div className="popup-equipamento"><strong>Você está aqui</strong><span>Sua localização atual, obtida pelo navegador e visível somente nesta sessão.</span></div></Popup>

@@ -1,13 +1,15 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HubConnectionBuilder } from '@microsoft/signalr';
 import AgentesView from './AgentesView';
-import MapaEquipamentos, { LocalizacaoAgente, LocalizacaoEquipamento, PontoHistoricoAgente } from './MapaEquipamentos';
+import MapaEquipamentos, { CameraMarcador, LocalizacaoAgente, LocalizacaoEquipamento } from './MapaEquipamentos';
 import { CameraPublica, CatalogoCameras, VideoCameraModal } from './CamerasPublicas';
+import HistoricoAgenteModal, { PaginaHistoricoAgente } from './HistoricoAgenteModal';
+import PainelOperacoes from './PainelOperacoes';
+import { AcidenteMapa, TransitoMapa } from './OperacoesTipos';
 import './App.css';
 import './Visoes.css';
 import './FilaManutencao.css';
 import './MapaInicio.css';
-import './MapaTrajeto.css';
 import './MapaAlertas.css';
 import './PainelOperacional.css';
 
@@ -54,17 +56,27 @@ type RespostaMapa = RespostaMapaBase<LocalizacaoEquipamento>;
 type RespostaMapaAgentes = RespostaMapaBase<LocalizacaoAgente>;
 type RespostaRadaresOpenStreetMap = { disponivel: boolean; fonte: string; aviso: string; itens: LocalizacaoEquipamento[] };
 type RespostaCamerasPublicas = { total: number; itens: CameraPublica[] };
-type TrajetoAgente = { agenteId: string; nomeAgente: string; data: string; historicoDisponivel: boolean; mensagem: string; localizacoes: PontoHistoricoAgente[] };
 type LocalizacaoUsuario = { latitude: number; longitude: number };
 type AcaoLinkEmail = 'confirmar' | 'redefinir';
 type ModoAutenticacao = 'entrar' | 'cadastro' | 'recuperacao' | 'confirmar' | 'redefinir';
 const tamanhoLoteMapa = 1000;
-const dataHojeLocal = () => {
-  const hoje = new Date();
-  hoje.setMinutes(hoje.getMinutes() - hoje.getTimezoneOffset());
-  return hoje.toISOString().slice(0, 10);
+const centrosMunicipaisCameras: Record<string, [number, number]> = {
+  'Avaré': [-23.104521, -48.925910],
+  'Bastos': [-21.922247, -50.731773],
+  'Cambará': [-23.042273, -50.075281],
+  'Cerqueira César': [-23.035314, -49.165052],
+  'Cândido Mota': [-22.743496, -50.389240],
+  'Espírito Santo do Turvo': [-22.693972, -49.429507],
+  'Jaú': [-22.293303, -48.559343],
+  'Ourinhos': [-22.955274, -49.857775],
+  'Paraguaçu Paulista': [-22.420350, -50.579210],
+  'Quatá': [-22.247098, -50.700362],
+  'Ribeirão do Sul': [-22.786181, -49.928526],
+  'São José da Boa Vista': [-23.917315, -49.650601],
+  'Taguaí': [-23.453431, -49.405445],
+  'Taquarituba': [-23.533730, -49.245254],
+  'Tupã': [-21.934913, -50.514126],
 };
-
 const estados: { valor: SituacaoEquipamento; rotulo: string }[] = [
   { valor: 'aindaNaoInstalado', rotulo: 'Ainda não instalado' },
   { valor: 'operacional', rotulo: 'Operacional' },
@@ -113,13 +125,16 @@ function App() {
   const [camerasPublicas, setCamerasPublicas] = useState<CameraPublica[]>([]);
   const [cameraEmReproducao, setCameraEmReproducao] = useState<CameraPublica | null>(null);
   const [catalogoCamerasAberto, setCatalogoCamerasAberto] = useState(false);
-  const [trajetoAgente, setTrajetoAgente] = useState<TrajetoAgente | null>(null);
-  const [dataHistoricoAgente, setDataHistoricoAgente] = useState(dataHojeLocal);
-  const [carregandoTrajeto, setCarregandoTrajeto] = useState(false);
+  const [agenteHistorico, setAgenteHistorico] = useState<{ id: string; nome: string; origemDados: OrigemRegistro } | null>(null);
   const [agenteParaEditar, setAgenteParaEditar] = useState<string | null>(null);
   const [localizacaoUsuario, setLocalizacaoUsuario] = useState<LocalizacaoUsuario | null>(null);
-  const [estadoLocalizacaoUsuario, setEstadoLocalizacaoUsuario] = useState<'aguardando' | 'localizada' | 'negada' | 'indisponivel'>('aguardando');
-  const [enquadramentoMapa, setEnquadramentoMapa] = useState<'usuario' | 'todos'>('usuario');
+  const [estadoLocalizacaoUsuario, setEstadoLocalizacaoUsuario] = useState<'naoSolicitada' | 'aguardando' | 'localizada' | 'negada' | 'indisponivel'>('naoSolicitada');
+  const [enquadramentoMapa, setEnquadramentoMapa] = useState<'usuario' | 'todos'>('todos');
+  const [erroCameras, setErroCameras] = useState('');
+  const [transitoMapa, setTransitoMapa] = useState<TransitoMapa[]>([]);
+  const [acidentesMapa, setAcidentesMapa] = useState<AcidenteMapa[]>([]);
+  const [selecionandoLocalAcidente, setSelecionandoLocalAcidente] = useState(false);
+  const [localAcidenteSelecionado, setLocalAcidenteSelecionado] = useState<LocalizacaoUsuario | null>(null);
   const [carregandoMapa, setCarregandoMapa] = useState(false);
   const [statusTempoReal, setStatusTempoReal] = useState<'conectando' | 'conectado' | 'reconectando' | 'desconectado'>('desconectado');
   const [visao, setVisao] = useState<'inventario' | 'mapa' | 'agentes'>('mapa');
@@ -269,8 +284,14 @@ function App() {
             itens: [],
           })),
         chamarApi('/api/cameras-publicas')
-          .then(async (resposta) => await resposta.json() as RespostaCamerasPublicas)
-          .catch(() => ({ total: 0, itens: [] })),
+          .then(async (resposta) => {
+            setErroCameras('');
+            return await resposta.json() as RespostaCamerasPublicas;
+          })
+          .catch((falha: unknown) => {
+            setErroCameras(falha instanceof Error ? falha.message : 'Não foi possível carregar o catálogo de câmeras.');
+            return { total: 0, itens: [] };
+          }),
       ]);
       setMapa(respostaEquipamentos);
       setMapaAgentes(respostaAgentes);
@@ -284,6 +305,11 @@ function App() {
   }, [carregarTodasLocalizacoes, pesquisaMapa, token]);
 
   const solicitarLocalizacaoUsuario = useCallback(() => {
+    if (localizacaoUsuario) {
+      setEnquadramentoMapa('usuario');
+      return;
+    }
+
     if (!navigator.geolocation) {
       setEstadoLocalizacaoUsuario('indisponivel');
       return;
@@ -301,7 +327,7 @@ function App() {
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     );
-  }, []);
+  }, [localizacaoUsuario]);
 
   const atualizacaoTempoReal = useRef({ carregarDados, carregarMapa, visao });
   useEffect(() => {
@@ -314,12 +340,8 @@ function App() {
     if (token) return;
     setCameraEmReproducao(null);
     setCatalogoCamerasAberto(false);
-    setTrajetoAgente(null);
+    setAgenteHistorico(null);
   }, [token]);
-
-  useEffect(() => {
-    if (token) solicitarLocalizacaoUsuario();
-  }, [solicitarLocalizacaoUsuario, token]);
 
   useEffect(() => {
     if (visao === 'mapa' && token) void carregarMapa();
@@ -407,7 +429,31 @@ function App() {
     ...(radaresOpenStreetMap?.itens ?? semLocalizacoesEquipamentos),
   ], [mapa?.itens, radaresOpenStreetMap?.itens]);
   const agentesMapa = mapaAgentes?.itens ?? semLocalizacoesAgentes;
-  const camerasMapa = useMemo(() => camerasPublicas.filter((camera) => camera.latitude !== null && camera.longitude !== null), [camerasPublicas]);
+  const camerasMapa = useMemo(() => {
+    const marcadoresIndividuais: CameraMarcador[] = camerasPublicas
+      .filter((camera) => camera.latitude != null && camera.longitude != null)
+      .map((camera) => ({
+        chave: `camera-${camera.id}`,
+        cidade: camera.cidade,
+        latitude: camera.latitude!,
+        longitude: camera.longitude!,
+        aproximada: false,
+        cameras: [camera],
+      }));
+    const agrupadas = new Map<string, CameraPublica[]>();
+    for (const camera of camerasPublicas) {
+      if (camera.latitude != null && camera.longitude != null) continue;
+      agrupadas.set(camera.cidade, [...(agrupadas.get(camera.cidade) ?? []), camera]);
+    }
+    const marcadoresMunicipais = [...agrupadas].flatMap(([cidade, cameras]): CameraMarcador[] => {
+      const centro = centrosMunicipaisCameras[cidade];
+      return centro ? [{ chave: `municipio-${cidade}`, cidade, latitude: centro[0], longitude: centro[1], aproximada: true, cameras }] : [];
+    });
+    return [...marcadoresIndividuais, ...marcadoresMunicipais];
+  }, [camerasPublicas]);
+  const camerasSemReferencia = camerasPublicas.filter((camera) => (camera.latitude == null || camera.longitude == null) && !centrosMunicipaisCameras[camera.cidade]).length;
+  const camerasComPosicaoIndividual = camerasPublicas.filter((camera) => camera.latitude != null && camera.longitude != null).length;
+  const camerasComReferenciaMunicipal = camerasMapa.filter((marcador) => marcador.aproximada).reduce((total, marcador) => total + marcador.cameras.length, 0);
 
   async function entrar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -596,26 +642,26 @@ function App() {
     setVisao('agentes');
   }, []);
 
-  const carregarTrajetoAgente = useCallback(async (id: string) => {
-    if (!dataHistoricoAgente) {
-      setErro('Selecione uma data para consultar o histórico de posições.');
-      return;
+  const abrirHistoricoAgenteDoMapa = useCallback((id: string) => {
+    const agente = agentesMapa.find((item) => item.id === id);
+    if (agente) {
+      setAgenteHistorico({ id: agente.id, nome: agente.nome, origemDados: agente.origemDados ?? 'manual' });
     }
-    setCarregandoTrajeto(true);
-    setErro('');
-    setTrajetoAgente(null);
-    try {
-      const parametros = new URLSearchParams({ data: dataHistoricoAgente });
-      const resposta = await chamarApi(`/api/agentes/${id}/trajeto?${parametros}`);
-      setTrajetoAgente(await resposta.json() as TrajetoAgente);
-      setEnquadramentoMapa('todos');
-      setVisao('mapa');
-    } catch (falha) {
-      setErro(falha instanceof Error ? falha.message : 'Não foi possível consultar as posições registradas.');
-    } finally {
-      setCarregandoTrajeto(false);
-    }
-  }, [chamarApi, dataHistoricoAgente]);
+  }, [agentesMapa]);
+
+  const listarHistoricoAgente = useCallback(async (
+    id: string,
+    inicio: string,
+    fim: string,
+    deslocamento: number,
+    limite: number,
+  ): Promise<PaginaHistoricoAgente> => {
+    const parametros = new URLSearchParams({ deslocamento: String(deslocamento), limite: String(limite) });
+    if (inicio) parametros.set('inicio', inicio);
+    if (fim) parametros.set('fim', fim);
+    const resposta = await chamarApi(`/api/agentes/${id}/historico-localizacoes?${parametros}`);
+    return await resposta.json() as PaginaHistoricoAgente;
+  }, [chamarApi]);
 
   const fecharVideoCamera = useCallback(() => setCameraEmReproducao(null), []);
   const fecharCatalogoCameras = useCallback(() => setCatalogoCamerasAberto(false), []);
@@ -791,8 +837,9 @@ function App() {
             <div className="mapa-cabecalho">
               <div>
                 <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA · TODOS OS REGISTROS COM COORDENADAS</p>
-                <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes · {camerasPublicas.length} câmeras · {radaresOpenStreetMap?.itens.length ?? '—'} radares OSM)</span></h2>
-                <p className="mapa-descricao">Mapa interativo com dados cadastrados e pontos públicos mapeados. A localização do navegador só é usada nesta sessão, após sua autorização.</p>
+                <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes · {camerasMapa.reduce((total, marcador) => total + marcador.cameras.length, 0)} câmeras no mapa · {radaresOpenStreetMap?.itens.length ?? '—'} radares OSM)</span></h2>
+                <p className="mapa-descricao">Câmeras com coordenadas próprias têm marcador individual; as demais ficam agrupadas no centro municipal aproximado até a posição exata ser validada. A localização do navegador só é usada nesta sessão.</p>
+                <p className="mapa-descricao">Câmeras: {camerasPublicas.length} no catálogo · {camerasComPosicaoIndividual} posições individuais · {camerasComReferenciaMunicipal} referências municipais · {camerasSemReferencia} sem referência geográfica. Sem posição válida: {Math.max(0, (indicadores?.totalCadastrado ?? 0) - (mapa?.totalComCoordenadas ?? 0))} equipamento(s) e {Math.max(0, (indicadoresAgentes?.totalCadastrado ?? 0) - (mapaAgentes?.totalComCoordenadas ?? 0))} agente(s) não podem ser plotados.</p>
                 <div className="mapa-indicadores-situacao" aria-label="Quantidade de equipamentos cadastrados por situação">
                   <span className="mapa-indicadores-titulo">EQUIPAMENTOS POR SITUAÇÃO · CADASTRO</span>
                   {estados.map((estado) => <span key={estado.valor}><i className={`situacao-indicador situacao-${estado.valor}`} />{estado.rotulo}<strong>{indicadores?.porSituacao.find((item) => item.situacao === estado.valor)?.quantidade ?? 0}</strong></span>)}
@@ -807,21 +854,18 @@ function App() {
                 <p className="mapa-indicadores-nota">Disponibilidade = operacionais ÷ equipamentos instalados (não inclui “ainda não instalado”). Situações e atividade dos agentes são informações declaradas manualmente, não telemetria.</p>
               </div>
               <div className="mapa-acoes">
-                <div className="mapa-legenda" aria-label="Legenda do mapa"><span><i className="legenda-equipamento" />Equipamentos</span><span><i className="legenda-agente" />Agentes</span></div>
+                <div className="mapa-legenda" aria-label="Legenda do mapa"><span><i className="legenda-equipamento" />Equipamentos</span><span><i className="legenda-agente" />Agentes</span><span><i className="legenda-camera" />Câmeras · tracejado = referência municipal</span><span><i className="legenda-transito" />Trânsito</span><span><i className="legenda-acidente" />Acidentes</span></div>
                 <span className="mapa-legenda-fonte">Radares OSM em verde-água · dados simulados são identificados nos marcadores.</span>
-                <label className="mapa-data-trajeto">Data do histórico de posições<input required type="date" value={dataHistoricoAgente} onChange={(evento) => setDataHistoricoAgente(evento.target.value)} /></label>
                 <span className={`mapa-status-localizacao ${estadoLocalizacaoUsuario === 'localizada' ? 'localizacao-ok' : ''}`}>
-                  {estadoLocalizacaoUsuario === 'localizada' ? 'Você está no mapa' : estadoLocalizacaoUsuario === 'aguardando' ? 'Localizando você…' : estadoLocalizacaoUsuario === 'negada' ? 'Localização não autorizada' : 'Localização indisponível'}
+                  {estadoLocalizacaoUsuario === 'localizada' ? 'Localização autorizada' : estadoLocalizacaoUsuario === 'aguardando' ? 'Localizando você…' : estadoLocalizacaoUsuario === 'negada' ? 'Localização não autorizada' : estadoLocalizacaoUsuario === 'naoSolicitada' ? 'Localização ainda não solicitada' : 'Localização indisponível'}
                 </span>
-                <button className="button button-quiet" onClick={() => { setEnquadramentoMapa('todos'); }} disabled={!mapa?.itens.length && !mapaAgentes?.itens.length && !radaresOpenStreetMap?.itens.length}>Enquadrar pontos</button>
+                <button className="button button-quiet" onClick={() => { setEnquadramentoMapa('todos'); }} disabled={!mapa?.itens.length && !mapaAgentes?.itens.length && !radaresOpenStreetMap?.itens.length && !camerasMapa.length}>Enquadrar pontos</button>
                 <button className="button button-quiet" onClick={() => setCatalogoCamerasAberto(true)}>Câmeras ao vivo ({camerasPublicas.length})</button>
                 <button className="button button-quiet" onClick={solicitarLocalizacaoUsuario} disabled={estadoLocalizacaoUsuario === 'aguardando'}>Minha localização</button>
                 <button className="button button-quiet" onClick={() => void carregarMapa()} disabled={carregandoMapa}>↻ Atualizar mapa</button>
               </div>
             </div>
-            {trajetoAgente && <div className="mapa-alerta mapa-trajeto-status" role="status"><span><strong>{trajetoAgente.nomeAgente}</strong> · {new Intl.DateTimeFormat('pt-BR').format(new Date(`${trajetoAgente.data}T00:00:00`))} · {trajetoAgente.mensagem} {trajetoAgente.historicoDisponivel && `${trajetoAgente.localizacoes.length} posições registradas.`}</span><button type="button" onClick={() => setTrajetoAgente(null)}>Limpar trajeto</button></div>}
             {indicadores && (indicadores.manutencoesImediatas + indicadores.manutencoesVencidas + indicadores.manutencoesProximas > 0) && <div className="mapa-alerta mapa-alerta-manutencao" role="status"><span>{indicadores.manutencoesImediatas > 0 && <strong>{indicadores.manutencoesImediatas} imediata(s) declarada(s). </strong>}{indicadores.manutencoesVencidas > 0 && <strong>{indicadores.manutencoesVencidas} agendada(s) vencida(s). </strong>}{indicadores.manutencoesProximas > 0 && <strong>{indicadores.manutencoesProximas} prevista(s) nos próximos 7 dias.</strong>}</span><button type="button" onClick={abrirFilaManutencao}>Consultar fila →</button></div>}
-            {carregandoTrajeto && <div className="mapa-alerta" role="status">Consultando posições registradas do agente…</div>}
             <form className="filters map-filters" onSubmit={(evento) => { evento.preventDefault(); setPesquisaMapa(filtrosMapa); }}>
               <label>Tipo<input placeholder="Ex.: radar" value={filtrosMapa.tipo} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, tipo: evento.target.value })} /></label>
               <label>Situação<select value={filtrosMapa.situacao} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, situacao: evento.target.value })}><option value="">Todas</option>{estados.map((estado) => <option key={estado.valor} value={estado.valor}>{estado.rotulo}</option>)}</select></label>
@@ -835,23 +879,37 @@ function App() {
             </div>}
             {mapaAgentes?.resultadoTruncado && <div className="mapa-alerta" role="status"><span>Alguns agentes não foram carregados. Atualize o mapa para tentar novamente.</span></div>}
             {radaresOpenStreetMap && !radaresOpenStreetMap.disponivel && <div className="mapa-alerta mapa-alerta-fonte" role="status">{radaresOpenStreetMap.aviso}</div>}
+            {erroCameras && <div className="mapa-alerta mapa-alerta-fonte" role="alert">Não foi possível consultar o catálogo de câmeras: {erroCameras}</div>}
+            {camerasSemReferencia > 0 && <div className="mapa-alerta" role="status">{camerasSemReferencia} câmera(s) não têm coordenadas nem referência municipal cadastrada e ainda não podem ser colocadas no mapa.</div>}
             {indicadores?.porLocalidade.length ? <details className="painel-insights"><summary>Consolidação por localidade · bairro/cidade</summary><p>Resumo agrupado pelo bairro, cidade e UF informados no cadastro.</p><div className="painel-insights-tabela"><table><thead><tr><th>Localidade</th><th>Operacionais / instalados</th><th>Indisponíveis</th><th>Imediatas</th><th>Vencidas</th><th>Próx. 7 dias</th></tr></thead><tbody>{indicadores.porLocalidade.map((localidade) => <tr key={`${localidade.cidade}-${localidade.uf}-${localidade.bairro}`}><td>{localidade.bairro}, {localidade.cidade}/{localidade.uf}</td><td>{localidade.operacionais} / {localidade.totalInstalado}</td><td>{localidade.indisponiveis}</td><td>{localidade.manutencoesImediatas}</td><td>{localidade.manutencoesVencidas}</td><td>{localidade.manutencoesProximas}</td></tr>)}</tbody></table></div></details> : null}
             {indicadores && <details className="painel-insights"><summary>Projeção de manutenção · próximos 30 dias ({indicadores.projecaoManutencao.reduce((totalProgramado, item) => totalProgramado + item.quantidade, 0)} programada(s))</summary><p>Projeção determinística baseada nas datas de manutenção cadastradas entre {dataLocal(indicadores.inicioProjecao)} e {dataLocal(indicadores.fimProjecao)}. Não é previsão de falhas ou ocorrências.</p>{indicadores.projecaoManutencao.length ? <div className="painel-insights-tabela"><table><thead><tr><th>Data prevista</th><th>Localidade</th><th>Equipamentos</th></tr></thead><tbody>{indicadores.projecaoManutencao.map((item, indice) => <tr key={`${item.data}-${item.cidade}-${item.bairro}-${indice}`}><td>{dataLocal(item.data)}</td><td>{item.bairro}, {item.cidade}/{item.uf}</td><td>{item.quantidade}</td></tr>)}</tbody></table></div> : <p>Nenhuma manutenção agendada para o horizonte apresentado.</p>}</details>}
+            <PainelOperacoes
+              chamarApi={chamarApi}
+              obterTokenCsrf={obterTokenCsrf}
+              localSelecionado={localAcidenteSelecionado}
+              selecionandoLocal={selecionandoLocalAcidente}
+              onSolicitarSelecao={setSelecionandoLocalAcidente}
+              onTransitoAtualizado={setTransitoMapa}
+              onAcidentesAtualizados={setAcidentesMapa}
+            />
             <div className="mapa-conteudo">
               <MapaEquipamentos
                 equipamentos={equipamentosMapa}
                 agentes={agentesMapa}
                 cameras={camerasMapa}
+                transito={transitoMapa}
+                acidentes={acidentesMapa}
+                selecionarLocalAcidente={selecionandoLocalAcidente}
+                onSelecionarLocalAcidente={(coordenadas) => { setLocalAcidenteSelecionado(coordenadas); setSelecionandoLocalAcidente(false); }}
                 localizacaoUsuario={localizacaoUsuario}
                 enquadramento={enquadramentoMapa}
-                trajetoAgente={trajetoAgente}
                 onEditarEquipamento={(id) => void editarEquipamentoDoMapa(id)}
                 onEditarAgente={abrirEdicaoAgenteDoMapa}
-                onVerTrajetoAgente={(id) => void carregarTrajetoAgente(id)}
+                onVerHistoricoAgente={abrirHistoricoAgenteDoMapa}
                 onReproduzirCamera={setCameraEmReproducao}
               />
               {carregandoMapa && <div className="mapa-mensagem-overlay"><strong>Carregando localizações…</strong><span>Buscando equipamentos e agentes cadastrados.</span></div>}
-              {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && !camerasMapa.length && !radaresOpenStreetMap?.itens.length && (
+              {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && !camerasMapa.length && !radaresOpenStreetMap?.itens.length && !transitoMapa.length && !acidentesMapa.length && (
                 <div className="mapa-mensagem-overlay"><strong>Nenhum ponto georreferenciado ainda</strong><span>Adicione registros com coordenadas para vê-los aqui. Os pontos demonstrativos aparecem identificados como simulados.</span></div>
               )}
             </div>
@@ -902,6 +960,7 @@ function App() {
       </div>}
       {catalogoCamerasAberto && <CatalogoCameras cameras={camerasPublicas} onPlay={(camera) => { setCatalogoCamerasAberto(false); setCameraEmReproducao(camera); }} onFechar={fecharCatalogoCameras} />}
       <VideoCameraModal camera={cameraEmReproducao} onFechar={fecharVideoCamera} />
+      {agenteHistorico && <HistoricoAgenteModal agente={agenteHistorico} listar={listarHistoricoAgente} onFechar={() => setAgenteHistorico(null)} />}
     </main>
   );
 }
