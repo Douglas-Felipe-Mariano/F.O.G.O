@@ -27,7 +27,7 @@ public sealed class OperacoesController(OperacoesService service) : ControllerBa
     public async Task<ActionResult<IReadOnlyCollection<AcidenteResposta>>> ListarAcidentesAsync(CancellationToken cancelamento) =>
         Ok(await service.ListarAcidentesAsync(cancelamento));
 
-    [HttpGet("acidentes/{id:guid}")]
+    [HttpGet("acidentes/{id:guid}", Name = "ConsultarAcidente")]
     public async Task<ActionResult<AcidenteResposta>> ConsultarAcidenteAsync(Guid id, CancellationToken cancelamento)
     {
         var acidente = await service.ConsultarAcidenteAsync(id, cancelamento);
@@ -55,7 +55,7 @@ public sealed class OperacoesController(OperacoesService service) : ControllerBa
         if (erros.Count > 0) return ValidationProblem(CriarModelState(erros));
 
         var acidente = await service.RegistrarAcidenteAsync(requisicao, cancelamento);
-        return CreatedAtAction(nameof(ConsultarAcidenteAsync), new { id = acidente.Id }, acidente);
+        return CreatedAtRoute("ConsultarAcidente", new { id = acidente.Id }, acidente);
     }
 
     [HttpPost("acidentes/{id:guid}/despachar")]

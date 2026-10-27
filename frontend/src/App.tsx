@@ -5,6 +5,7 @@ import MapaEquipamentos, { CameraMarcador, LocalizacaoAgente, LocalizacaoEquipam
 import { CameraPublica, CatalogoCameras, VideoCameraModal } from './CamerasPublicas';
 import HistoricoAgenteModal, { PaginaHistoricoAgente } from './HistoricoAgenteModal';
 import PainelOperacoes from './PainelOperacoes';
+import SeletorTipoEquipamento from './SeletorTipoEquipamento';
 import { AcidenteMapa, PontoCalor, TransitoMapa } from './OperacoesTipos';
 import './App.css';
 import './Visoes.css';
@@ -12,6 +13,7 @@ import './FilaManutencao.css';
 import './MapaInicio.css';
 import './MapaAlertas.css';
 import './PainelOperacional.css';
+import './FormularioEquipamento.css';
 
 type SituacaoEquipamento = 'aindaNaoInstalado' | 'operacional' | 'mauFuncionamento' | 'emManutencao' | 'desativado' | 'furtado';
 type TipoManutencao = 'imediata' | 'agendada' | 'periodica';
@@ -42,6 +44,8 @@ type Equipamento = {
 };
 
 type EquipamentoRequisicao = Omit<Equipamento, 'id' | 'criadoEm' | 'atualizadoEm'>;
+type TipoCampoEndereco = 'rua' | 'bairro' | 'cidade' | 'uf';
+type RespostaViaCep = { cep?: string; logradouro?: string; bairro?: string; localidade?: string; uf?: string; erro?: boolean };
 type PaginaEquipamentos = { pagina: number; tamanhoPagina: number; totalRegistros: number; itens: Equipamento[] };
 type ResumoLocalidade = { bairro: string; cidade: string; uf: string; totalCadastrado: number; totalInstalado: number; operacionais: number; indisponiveis: number; manutencoesImediatas: number; manutencoesVencidas: number; manutencoesProximas: number };
 type ProjecaoManutencao = { bairro: string; cidade: string; uf: string; data: string; quantidade: number };
@@ -151,15 +155,26 @@ function App() {
   const [erro, setErro] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [carregando, setCarregando] = useState(false);
+  const [desativandoId, setDesativandoId] = useState<string | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState<Equipamento | null>(null);
   const [formulario, setFormulario] = useState<EquipamentoRequisicao>(vazioFormulario);
   const [caracteristicasJson, setCaracteristicasJson] = useState('{}');
+  const [tiposEquipamento, setTiposEquipamento] = useState<string[]>([]);
+  const [tiposEquipamentoCarregando, setTiposEquipamentoCarregando] = useState(false);
+  const [erroTiposEquipamento, setErroTiposEquipamento] = useState('');
+  const [tipoEquipamentoConfirmado, setTipoEquipamentoConfirmado] = useState(false);
+  const [estadoConsultaCep, setEstadoConsultaCep] = useState<'ocioso' | 'consultando' | 'encontrado' | 'naoEncontrado' | 'erro'>('ocioso');
+  const [mensagemConsultaCep, setMensagemConsultaCep] = useState('');
   const [credenciais, setCredenciais] = useState({ identificador: '', senha: '' });
   const [emailAutenticacao, setEmailAutenticacao] = useState(linkEmail?.email ?? '');
   const [senhaNova, setSenhaNova] = useState('');
   const [confirmacaoSenha, setConfirmacaoSenha] = useState('');
   const emissaoCsrfEmAndamento = useRef<Promise<string> | null>(null);
+  const formularioAtualRef = useRef(formulario);
+  const enderecoPreenchidoViaCep = useRef<Partial<Record<TipoCampoEndereco, string>> | null>(null);
+  const consultaCepId = useRef(0);
+  const consultaCepAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (linkEmail) window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
@@ -205,6 +220,28 @@ function App() {
     }
     return resposta;
   }, [token]);
+
+  useEffect(() => {
+    if (!modalAberto || !token) return;
+    let ativo = true;
+    setTiposEquipamentoCarregando(true);
+    setErroTiposEquipamento('');
+    void chamarApi('/api/equipamentos/tipos')
+      .then(async (resposta) => {
+        const tipos = await resposta.json() as string[];
+        if (ativo) setTiposEquipamento(tipos);
+      })
+      .catch(() => {
+        if (ativo) {
+          setTiposEquipamento([]);
+          setErroTiposEquipamento('Não foi possível carregar os tipos cadastrados; ainda é possível adicionar um novo.');
+        }
+      })
+      .finally(() => {
+        if (ativo) setTiposEquipamentoCarregando(false);
+      });
+    return () => { ativo = false; };
+  }, [chamarApi, modalAberto, token]);
 
   const carregarDados = useCallback(async () => {
     if (!token) return;
@@ -603,10 +640,32 @@ function App() {
     return document.cookie.split('; ').find((parte) => parte.startsWith(`${nome}=`))?.split('=').slice(1).join('=');
   }
 
+  function definirFormulario(novo: EquipamentoRequisicao) {
+    formularioAtualRef.current = novo;
+    setFormulario(novo);
+  }
+
+  function atualizarFormulario(atualizar: (atual: EquipamentoRequisicao) => EquipamentoRequisicao) {
+    const novo = atualizar(formularioAtualRef.current);
+    formularioAtualRef.current = novo;
+    setFormulario(novo);
+  }
+
+  function limparConsultaCep() {
+    consultaCepId.current++;
+    consultaCepAbort.current?.abort();
+    consultaCepAbort.current = null;
+    enderecoPreenchidoViaCep.current = null;
+    setEstadoConsultaCep('ocioso');
+    setMensagemConsultaCep('');
+  }
+
   function abrirNovo() {
     setEditando(null);
-    setFormulario(vazioFormulario());
+    definirFormulario(vazioFormulario());
     setCaracteristicasJson('{}');
+    setTipoEquipamentoConfirmado(false);
+    limparConsultaCep();
     setModalAberto(true);
   }
 
@@ -622,7 +681,7 @@ function App() {
   function abrirEdicao(equipamento: Equipamento) {
     setEditando(equipamento);
     setCaracteristicasJson(JSON.stringify(equipamento.caracteristicas ?? {}, null, 2));
-    setFormulario({
+    definirFormulario({
       tipo: equipamento.tipo, numeroSerie: equipamento.numeroSerie, marca: equipamento.marca ?? '', modelo: equipamento.modelo ?? '',
       caracteristicas: equipamento.caracteristicas ?? {},
       cep: equipamento.cep, bairro: equipamento.bairro, cidade: equipamento.cidade, uf: equipamento.uf, rua: equipamento.rua,
@@ -631,6 +690,8 @@ function App() {
       tipoManutencao: equipamento.tipoManutencao, proximaManutencao: equipamento.proximaManutencao,
       origemDados: equipamento.origemDados,
     });
+    setTipoEquipamentoConfirmado(true);
+    limparConsultaCep();
     setModalAberto(true);
   }
 
@@ -677,6 +738,10 @@ function App() {
     evento.preventDefault();
     setErro('');
     setMensagem('');
+    if (!formulario.tipo.trim() || !tipoEquipamentoConfirmado) {
+      setErro('Selecione um tipo existente ou confirme “Adicionar novo tipo” na lista.');
+      return;
+    }
     let caracteristicas: Record<string, string>;
     let parsed: unknown;
     try {
@@ -704,16 +769,101 @@ function App() {
       await chamarApi(editando ? `/api/equipamentos/${editando.id}` : '/api/equipamentos', {
         method: editando ? 'PUT' : 'POST', body: JSON.stringify(corpo),
       });
+      setTiposEquipamento((atuais) => atuais.some((tipo) => tipo.localeCompare(formulario.tipo.trim(), 'pt-BR', { sensitivity: 'base' }) === 0)
+        ? atuais
+        : [...atuais, formulario.tipo.trim()].sort((a, b) => a.localeCompare(b, 'pt-BR')));
       setMensagem(editando ? 'Equipamento atualizado.' : 'Equipamento cadastrado.');
       setModalAberto(false);
+      limparConsultaCep();
       await Promise.all([carregarDados(), ...(visao === 'mapa' ? [carregarMapa()] : [])]);
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível salvar o equipamento.');
     }
   }
 
+  async function desativarEquipamento(equipamento: Equipamento) {
+    const confirmado = window.confirm(
+      `Desativar ${equipamento.tipo} · série ${equipamento.numeroSerie}? O registro permanecerá no inventário e deixará de aparecer no mapa.`,
+    );
+    if (!confirmado) return;
+
+    setErro('');
+    setMensagem('');
+    setDesativandoId(equipamento.id);
+    try {
+      await chamarApi(`/api/equipamentos/${equipamento.id}/desativar`, { method: 'POST' });
+      setMensagem('Equipamento desativado. O registro permanece no inventário.');
+      await Promise.all([carregarDados(), carregarMapa()]);
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível desativar o equipamento.');
+    } finally {
+      setDesativandoId(null);
+    }
+  }
+
   function atualizarCampo<K extends keyof EquipamentoRequisicao>(campo: K, valor: EquipamentoRequisicao[K]) {
-    setFormulario((atual) => ({ ...atual, [campo]: valor }));
+    atualizarFormulario((atual) => ({ ...atual, [campo]: valor }));
+    if (campo === 'cep') {
+      consultaCepId.current++;
+      consultaCepAbort.current?.abort();
+      consultaCepAbort.current = null;
+      setEstadoConsultaCep('ocioso');
+      setMensagemConsultaCep('');
+    }
+  }
+
+  async function consultarCep() {
+    const cep = formularioAtualRef.current.cep.replace(/\D/g, '');
+    if (!cep) return;
+    if (cep.length !== 8) {
+      setEstadoConsultaCep('erro');
+      setMensagemConsultaCep('Digite um CEP com oito números para consultar.');
+      return;
+    }
+
+    consultaCepAbort.current?.abort();
+    const controlador = new AbortController();
+    consultaCepAbort.current = controlador;
+    const consultaAtual = ++consultaCepId.current;
+    setEstadoConsultaCep('consultando');
+    setMensagemConsultaCep('Consultando CEP na ViaCEP…');
+
+    try {
+      const resposta = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: controlador.signal });
+      if (!resposta.ok) throw new Error('Serviço de consulta indisponível.');
+      const dados = await resposta.json() as RespostaViaCep;
+      if (consultaAtual !== consultaCepId.current || formularioAtualRef.current.cep.replace(/\D/g, '') !== cep) return;
+      if (dados.erro) {
+        setEstadoConsultaCep('naoEncontrado');
+        setMensagemConsultaCep('CEP não encontrado. Você pode preencher o endereço manualmente.');
+        return;
+      }
+
+      const endereco: Partial<Record<TipoCampoEndereco, string>> = {
+        rua: dados.logradouro?.trim() ?? '',
+        bairro: dados.bairro?.trim() ?? '',
+        cidade: dados.localidade?.trim() ?? '',
+        uf: dados.uf?.trim() ?? '',
+      };
+      const atual = formularioAtualRef.current;
+      const anteriorAutomatico = enderecoPreenchidoViaCep.current;
+      const novo = { ...atual, cep: `${cep.slice(0, 5)}-${cep.slice(5)}` };
+      for (const campo of ['rua', 'bairro', 'cidade', 'uf'] as const) {
+        const valorAtual = atual[campo].trim();
+        const podePreencher = !valorAtual || valorAtual === anteriorAutomatico?.[campo];
+        if (podePreencher && endereco[campo]) novo[campo] = endereco[campo]!;
+      }
+      enderecoPreenchidoViaCep.current = endereco;
+      definirFormulario(novo);
+      setEstadoConsultaCep('encontrado');
+      setMensagemConsultaCep('Endereço localizado. Campos preenchidos manualmente foram preservados.');
+    } catch (falha) {
+      if (controlador.signal.aborted || consultaAtual !== consultaCepId.current) return;
+      setEstadoConsultaCep('erro');
+      setMensagemConsultaCep(falha instanceof Error ? `${falha.message} Preencha o endereço manualmente.` : 'Não foi possível consultar o CEP. Preencha o endereço manualmente.');
+    } finally {
+      if (consultaAtual === consultaCepId.current) consultaCepAbort.current = null;
+    }
   }
 
   return (
@@ -792,7 +942,7 @@ function App() {
             <div>
               <p className="eyebrow"><span>{visao === 'mapa' ? 'MAPA OPERACIONAL' : 'INVENTÁRIO'}</span> · OPERAÇÃO DA CIDADE</p>
               <h1>{visao === 'mapa' ? <>Mapa geográfico<span className="heading-period">.</span></> : <>Visão operacional<span className="heading-period">.</span></>}</h1>
-              {visao !== 'mapa' && <p className="intro">Consulte e mantenha os equipamentos cadastrados. Indicadores refletem o inventário; registros simulados são identificados como tal.</p>}
+              {visao !== 'mapa' && <p className="intro">Gerencie o inventário e acompanhe os indicadores operacionais.</p>}
             </div>
             <button className="button button-primary create-button" onClick={abrirNovo}>＋ Novo equipamento</button>
           </div>
@@ -835,7 +985,7 @@ function App() {
                   <td><span className={`status-pill status-${item.situacao.toLowerCase()}`}>{situacaoLabel.get(item.situacao) ?? item.situacao}</span></td>
                   <td>{item.necessitaManutencao ? <><strong>{tiposManutencao.find((tipo) => tipo.valor === item.tipoManutencao)?.rotulo ?? item.tipoManutencao}</strong><span className="cell-secondary">{item.proximaManutencao ? dataLocal(item.proximaManutencao) : 'sem data prevista'}</span></> : 'Não indicada'}</td>
                   <td><span className={`origin-tag origin-${item.origemDados}`}>{origemLabel[item.origemDados]}</span></td>
-                  <td><button className="icon-button" aria-label={`Editar ${item.tipo} ${item.numeroSerie}`} title="Editar equipamento" onClick={() => abrirEdicao(item)}>↗</button></td>
+                  <td><div className="inventory-row-actions"><button className="icon-button" aria-label={`Editar ${item.tipo} ${item.numeroSerie}`} title="Editar equipamento" onClick={() => abrirEdicao(item)}>↗</button>{item.situacao !== 'desativado' && <button className="button button-quiet inventory-deactivate" type="button" disabled={desativandoId === item.id} onClick={() => void desativarEquipamento(item)}>{desativandoId === item.id ? 'Desativando…' : 'Desativar'}</button>}</div></td>
                 </tr>
               ))}</tbody></table></div>
             )}
@@ -843,10 +993,10 @@ function App() {
           </section> : visao === 'mapa' ? <section className="painel-mapa" aria-labelledby="mapa-title">
             <div className="mapa-cabecalho">
               <div>
-                <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA · TODOS OS REGISTROS COM COORDENADAS</p>
+                <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA · EQUIPAMENTOS NÃO DESATIVADOS</p>
                 <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes · {camerasMapa.reduce((total, marcador) => total + marcador.cameras.length, 0)} câmeras no mapa · {radaresOpenStreetMap?.itens.length ?? '—'} radares OSM)</span></h2>
-                <p className="mapa-descricao">Câmeras com coordenadas próprias têm marcador individual; as demais ficam agrupadas no centro municipal aproximado até a posição exata ser validada. A localização do navegador só é usada nesta sessão.</p>
-                <p className="mapa-descricao">Câmeras: {camerasPublicas.length} no catálogo · {camerasComPosicaoIndividual} posições individuais · {camerasComReferenciaMunicipal} referências municipais · {camerasSemReferencia} sem referência geográfica. Sem posição válida: {Math.max(0, (indicadores?.totalCadastrado ?? 0) - (mapa?.totalComCoordenadas ?? 0))} equipamento(s) e {Math.max(0, (indicadoresAgentes?.totalCadastrado ?? 0) - (mapaAgentes?.totalComCoordenadas ?? 0))} agente(s) não podem ser plotados.</p>
+                <p className="mapa-descricao">Câmeras com coordenadas próprias aparecem individualmente; as demais usam uma referência geográfica municipal aproximada.</p>
+                <p className="mapa-descricao">Câmeras: {camerasPublicas.length} no catálogo · {camerasComPosicaoIndividual} posições individuais · {camerasComReferenciaMunicipal} referências municipais · {camerasSemReferencia} aguardando georreferenciamento. Equipamentos no mapa: {mapa?.totalComCoordenadas ?? 0} · agentes no mapa: {mapaAgentes?.totalComCoordenadas ?? 0}.</p>
                 <div className="mapa-indicadores-situacao" aria-label="Quantidade de equipamentos cadastrados por situação">
                   <span className="mapa-indicadores-titulo">EQUIPAMENTOS POR SITUAÇÃO · CADASTRO</span>
                   {estados.map((estado) => <span key={estado.valor}><i className={`situacao-indicador situacao-${estado.valor}`} />{estado.rotulo}<strong>{indicadores?.porSituacao.find((item) => item.situacao === estado.valor)?.quantidade ?? 0}</strong></span>)}
@@ -858,11 +1008,11 @@ function App() {
                   <span><small>DISPONIBILIDADE DECLARADA</small><strong>{indicadores?.percentualDisponibilidade == null ? '—' : `${indicadores.percentualDisponibilidade}%`}</strong></span>
                   <span><small>AGENTES DISPONÍVEIS/EM ATENDIMENTO · INFORMADO</small><strong>{indicadoresAgentes?.emAtividadeDeclarada ?? '—'} / {indicadoresAgentes?.totalCadastrado ?? '—'}</strong></span>
                 </div>
-                <p className="mapa-indicadores-nota">Disponibilidade = operacionais ÷ equipamentos instalados (não inclui “ainda não instalado”). Situações e atividade dos agentes são informações declaradas manualmente, não telemetria.</p>
+                <p className="mapa-indicadores-nota">Disponibilidade calculada sobre equipamentos instalados. Situações e atividade refletem os registros atualizados pelas equipes.</p>
               </div>
               <div className="mapa-acoes">
                 <div className="mapa-legenda" aria-label="Legenda do mapa"><span><i className="legenda-equipamento" />Equipamentos</span><span><i className="legenda-agente" />Agentes</span><span><i className="legenda-camera" />Câmeras · tracejado = referência municipal</span><span><i className="legenda-transito" />Trânsito</span><span><i className="legenda-acidente" />Acidentes</span></div>
-                <span className="mapa-legenda-fonte">Radares OSM em verde-água · dados simulados são identificados nos marcadores.</span>
+                <span className="mapa-legenda-fonte">Radares OSM em verde-água · registros demonstrativos identificados nos marcadores.</span>
                 <span className={`mapa-status-localizacao ${estadoLocalizacaoUsuario === 'localizada' ? 'localizacao-ok' : ''}`}>
                   {estadoLocalizacaoUsuario === 'localizada' ? 'Localização autorizada' : estadoLocalizacaoUsuario === 'aguardando' ? 'Localizando você…' : estadoLocalizacaoUsuario === 'negada' ? 'Localização não autorizada' : estadoLocalizacaoUsuario === 'naoSolicitada' ? 'Localização ainda não solicitada' : 'Localização indisponível'}
                 </span>
@@ -875,7 +1025,7 @@ function App() {
             {indicadores && (indicadores.manutencoesImediatas + indicadores.manutencoesVencidas + indicadores.manutencoesProximas > 0) && <div className="mapa-alerta mapa-alerta-manutencao" role="status"><span>{indicadores.manutencoesImediatas > 0 && <strong>{indicadores.manutencoesImediatas} imediata(s) declarada(s). </strong>}{indicadores.manutencoesVencidas > 0 && <strong>{indicadores.manutencoesVencidas} agendada(s) vencida(s). </strong>}{indicadores.manutencoesProximas > 0 && <strong>{indicadores.manutencoesProximas} prevista(s) nos próximos 7 dias.</strong>}</span><button type="button" onClick={abrirFilaManutencao}>Consultar fila →</button></div>}
             <form className="filters map-filters" onSubmit={(evento) => { evento.preventDefault(); setPesquisaMapa(filtrosMapa); }}>
               <label>Tipo<input placeholder="Ex.: radar" value={filtrosMapa.tipo} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, tipo: evento.target.value })} /></label>
-              <label>Situação<select value={filtrosMapa.situacao} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, situacao: evento.target.value })}><option value="">Todas</option>{estados.map((estado) => <option key={estado.valor} value={estado.valor}>{estado.rotulo}</option>)}</select></label>
+              <label>Situação<select value={filtrosMapa.situacao} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, situacao: evento.target.value })}><option value="">Todas (exceto desativados)</option>{estados.filter((estado) => estado.valor !== 'desativado').map((estado) => <option key={estado.valor} value={estado.valor}>{estado.rotulo}</option>)}</select></label>
               <label>Bairro<input value={filtrosMapa.bairro} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, bairro: evento.target.value })} /></label>
               <button className="button button-secondary" type="submit">Aplicar filtros</button>
               <button className="button button-quiet" type="button" onClick={() => { setFiltrosMapa(vazioFiltros); setPesquisaMapa(vazioFiltros); }}>Limpar</button>
@@ -887,9 +1037,9 @@ function App() {
             {mapaAgentes?.resultadoTruncado && <div className="mapa-alerta" role="status"><span>Alguns agentes não foram carregados. Atualize o mapa para tentar novamente.</span></div>}
             {radaresOpenStreetMap && !radaresOpenStreetMap.disponivel && <div className="mapa-alerta mapa-alerta-fonte" role="status">{radaresOpenStreetMap.aviso}</div>}
             {erroCameras && <div className="mapa-alerta mapa-alerta-fonte" role="alert">Não foi possível consultar o catálogo de câmeras: {erroCameras}</div>}
-            {camerasSemReferencia > 0 && <div className="mapa-alerta" role="status">{camerasSemReferencia} câmera(s) não têm coordenadas nem referência municipal cadastrada e ainda não podem ser colocadas no mapa.</div>}
+            {camerasSemReferencia > 0 && <div className="mapa-alerta" role="status">{camerasSemReferencia} câmera(s) aguardando georreferenciamento.</div>}
             {indicadores?.porLocalidade.length ? <details className="painel-insights"><summary>Consolidação por localidade · bairro/cidade</summary><p>Resumo agrupado pelo bairro, cidade e UF informados no cadastro.</p><div className="painel-insights-tabela"><table><thead><tr><th>Localidade</th><th>Operacionais / instalados</th><th>Indisponíveis</th><th>Imediatas</th><th>Vencidas</th><th>Próx. 7 dias</th></tr></thead><tbody>{indicadores.porLocalidade.map((localidade) => <tr key={`${localidade.cidade}-${localidade.uf}-${localidade.bairro}`}><td>{localidade.bairro}, {localidade.cidade}/{localidade.uf}</td><td>{localidade.operacionais} / {localidade.totalInstalado}</td><td>{localidade.indisponiveis}</td><td>{localidade.manutencoesImediatas}</td><td>{localidade.manutencoesVencidas}</td><td>{localidade.manutencoesProximas}</td></tr>)}</tbody></table></div></details> : null}
-            {indicadores && <details className="painel-insights"><summary>Projeção de manutenção · próximos 30 dias ({indicadores.projecaoManutencao.reduce((totalProgramado, item) => totalProgramado + item.quantidade, 0)} programada(s))</summary><p>Projeção determinística baseada nas datas de manutenção cadastradas entre {dataLocal(indicadores.inicioProjecao)} e {dataLocal(indicadores.fimProjecao)}. Não é previsão de falhas ou ocorrências.</p>{indicadores.projecaoManutencao.length ? <div className="painel-insights-tabela"><table><thead><tr><th>Data prevista</th><th>Localidade</th><th>Equipamentos</th></tr></thead><tbody>{indicadores.projecaoManutencao.map((item, indice) => <tr key={`${item.data}-${item.cidade}-${item.bairro}-${indice}`}><td>{dataLocal(item.data)}</td><td>{item.bairro}, {item.cidade}/{item.uf}</td><td>{item.quantidade}</td></tr>)}</tbody></table></div> : <p>Nenhuma manutenção agendada para o horizonte apresentado.</p>}</details>}
+            {indicadores && <details className="painel-insights"><summary>Agenda de manutenção · próximos 30 dias ({indicadores.projecaoManutencao.reduce((totalProgramado, item) => totalProgramado + item.quantidade, 0)} programada(s))</summary><p>Serviços agendados entre {dataLocal(indicadores.inicioProjecao)} e {dataLocal(indicadores.fimProjecao)}.</p>{indicadores.projecaoManutencao.length ? <div className="painel-insights-tabela"><table><thead><tr><th>Data prevista</th><th>Localidade</th><th>Equipamentos</th></tr></thead><tbody>{indicadores.projecaoManutencao.map((item, indice) => <tr key={`${item.data}-${item.cidade}-${item.bairro}-${indice}`}><td>{dataLocal(item.data)}</td><td>{item.bairro}, {item.cidade}/{item.uf}</td><td>{item.quantidade}</td></tr>)}</tbody></table></div> : <p>Nenhuma manutenção agendada para o horizonte apresentado.</p>}</details>}
             <PainelOperacoes
               chamarApi={chamarApi}
               obterTokenCsrf={obterTokenCsrf}
@@ -922,7 +1072,7 @@ function App() {
               />
               {carregandoMapa && <div className="mapa-mensagem-overlay"><strong>Carregando localizações…</strong><span>Buscando equipamentos e agentes cadastrados.</span></div>}
               {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && !camerasMapa.length && !radaresOpenStreetMap?.itens.length && !transitoMapa.length && !acidentesMapa.length && (
-                <div className="mapa-mensagem-overlay"><strong>Nenhum ponto georreferenciado ainda</strong><span>Adicione registros com coordenadas para vê-los aqui. Os pontos demonstrativos aparecem identificados como simulados.</span></div>
+                <div className="mapa-mensagem-overlay"><strong>Nenhum ponto georreferenciado ainda</strong><span>Cadastre equipamentos e agentes com coordenadas para visualizá-los no mapa.</span></div>
               )}
             </div>
           </section> : <AgentesView token={token} revisao={revisaoAgentes} agenteIdParaEditar={agenteParaEditar} onAgenteEditado={() => setAgenteParaEditar(null)} />}
@@ -937,7 +1087,8 @@ function App() {
           <form className="equipment-form" onSubmit={(evento) => void salvar(evento)}>
             <div className="form-section-title">IDENTIFICAÇÃO</div>
             <div className="form-grid">
-              <label>Tipo<input required maxLength={60} placeholder="Radar, câmera…" value={formulario.tipo} onChange={(e) => atualizarCampo('tipo', e.target.value)} /></label>
+              <label>Tipo<SeletorTipoEquipamento value={formulario.tipo} options={tiposEquipamento} onChange={(valor, confirmado) => { atualizarCampo('tipo', valor); setTipoEquipamentoConfirmado(confirmado); }} /></label>
+              <p className="equipamento-tipo-ajuda">{tiposEquipamentoCarregando ? 'Carregando tipos cadastrados…' : erroTiposEquipamento || 'Escolha um tipo existente ou selecione “Adicionar” para cadastrar um novo.'}</p>
               <label>Número de série<input required maxLength={100} value={formulario.numeroSerie} onChange={(e) => atualizarCampo('numeroSerie', e.target.value)} /></label>
               <label>Marca<input maxLength={100} value={formulario.marca ?? ''} onChange={(e) => atualizarCampo('marca', e.target.value)} /></label>
               <label>Modelo<input maxLength={120} value={formulario.modelo ?? ''} onChange={(e) => atualizarCampo('modelo', e.target.value)} /></label>
@@ -946,7 +1097,7 @@ function App() {
             <p className="form-hint">Use pares nome/valor em texto. Os atributos variam conforme o equipamento; os valores cadastrados aparecem no mapa.</p>
             <div className="form-section-title">LOCALIZAÇÃO</div>
             <div className="form-grid">
-              <label>CEP<input required maxLength={20} value={formulario.cep} onChange={(e) => atualizarCampo('cep', e.target.value)} /></label>
+              <label>CEP<input required maxLength={9} inputMode="numeric" placeholder="01310-100" value={formulario.cep} onBlur={() => void consultarCep()} onChange={(e) => atualizarCampo('cep', e.target.value)} /></label>
               <label>Bairro<input required maxLength={120} value={formulario.bairro} onChange={(e) => atualizarCampo('bairro', e.target.value)} /></label>
               <label>Cidade<input required maxLength={120} value={formulario.cidade} onChange={(e) => atualizarCampo('cidade', e.target.value)} /></label>
               <label>UF<input required maxLength={2} value={formulario.uf} onChange={(e) => atualizarCampo('uf', e.target.value)} /></label>
@@ -955,13 +1106,14 @@ function App() {
               <label>Latitude<input type="number" step="any" min="-90" max="90" value={formulario.latitude ?? ''} onChange={(e) => atualizarCampo('latitude', e.target.value === '' ? null : Number(e.target.value))} /></label>
               <label>Longitude<input type="number" step="any" min="-180" max="180" value={formulario.longitude ?? ''} onChange={(e) => atualizarCampo('longitude', e.target.value === '' ? null : Number(e.target.value))} /></label>
             </div>
+            <p className={`cep-consulta-status cep-consulta-${estadoConsultaCep}`} role="status" aria-live="polite">{mensagemConsultaCep || 'Ao sair do campo CEP, consultamos a ViaCEP para sugerir rua, bairro, cidade e UF. Campos já preenchidos manualmente são preservados.'}</p>
             <div className="form-section-title">SITUAÇÃO E MANUTENÇÃO</div>
             <div className="form-grid">
               <label>Situação<select required value={formulario.situacao} onChange={(e) => atualizarCampo('situacao', e.target.value as SituacaoEquipamento)}>{estados.map((estado) => <option key={estado.valor} value={estado.valor}>{estado.rotulo}</option>)}</select></label>
               <label>Origem dos dados<select required value={formulario.origemDados} onChange={(e) => atualizarCampo('origemDados', e.target.value as OrigemRegistro)}><option value="manual">Manual</option><option value="importado">Importado</option><option value="simulado">Simulado</option></select></label>
-              <label className="checkbox-label"><input type="checkbox" checked={formulario.necessitaManutencao} onChange={(e) => setFormulario((atual) => ({ ...atual, necessitaManutencao: e.target.checked, tipoManutencao: e.target.checked ? 'imediata' : null, proximaManutencao: e.target.checked ? atual.proximaManutencao : null }))} /> Necessita manutenção</label>
+              <label className="checkbox-label"><input type="checkbox" checked={formulario.necessitaManutencao} onChange={(e) => atualizarFormulario((atual) => ({ ...atual, necessitaManutencao: e.target.checked, tipoManutencao: e.target.checked ? 'imediata' : null, proximaManutencao: e.target.checked ? atual.proximaManutencao : null }))} /> Necessita manutenção</label>
               {formulario.necessitaManutencao && <>
-                <label>Tipo de manutenção<select required value={formulario.tipoManutencao ?? ''} onChange={(e) => setFormulario((atual) => ({ ...atual, tipoManutencao: e.target.value as TipoManutencao, proximaManutencao: e.target.value === 'imediata' ? null : atual.proximaManutencao }))}>{tiposManutencao.map((tipo) => <option key={tipo.valor} value={tipo.valor}>{tipo.rotulo}</option>)}</select></label>
+                <label>Tipo de manutenção<select required value={formulario.tipoManutencao ?? ''} onChange={(e) => atualizarFormulario((atual) => ({ ...atual, tipoManutencao: e.target.value as TipoManutencao, proximaManutencao: e.target.value === 'imediata' ? null : atual.proximaManutencao }))}>{tiposManutencao.map((tipo) => <option key={tipo.valor} value={tipo.valor}>{tipo.rotulo}</option>)}</select></label>
                 {formulario.tipoManutencao !== 'imediata' && <label>Próxima manutenção<input type="date" required value={formulario.proximaManutencao ?? ''} onChange={(e) => atualizarCampo('proximaManutencao', e.target.value || null)} /></label>}
               </>}
             </div>

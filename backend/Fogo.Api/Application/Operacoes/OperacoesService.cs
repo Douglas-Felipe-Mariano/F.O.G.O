@@ -177,7 +177,7 @@ public sealed class OperacoesService(FogoDbContext banco, TimeProvider relogio)
                     quantidadeAgentes,
                     agora,
                     agora.AddHours(1),
-                    $"Avaliar reforço preventivo de {quantidadeAgentes} agente(s); índice heurístico {indice}/100. Confirme as condições no local antes de mobilizar a equipe."));
+                    $"Reforço preventivo sugerido: {quantidadeAgentes} agente(s) para análise da equipe operacional."));
             }
         }
 
@@ -202,7 +202,7 @@ public sealed class OperacoesService(FogoDbContext banco, TimeProvider relogio)
             recomendacoes.OrderByDescending(item => item.IndiceRisco).ThenBy(item => item.Cidade).ThenBy(item => item.Regiao).ToArray(),
             pontosCalor.Select(item => new PontoCalorResposta(item.Key.Latitude, item.Key.Longitude, item.Value)).ToArray(),
             agora,
-            "Índice heurístico explicável (45% trânsito previsto, 30% falhas/manutenção, 25% acidentes dos últimos 90 dias). Não é probabilidade nem modelo treinado; trânsito e dados de origem simulada são identificados. Recomendações não despacham agentes.");
+            "Índice de referência composto por trânsito previsto (45%), manutenção e falhas de equipamentos (30%) e ocorrências dos últimos 90 dias (25%). Consulte a origem dos dados em cada indicador.");
     }
 
     private static RegiaoPredicao? EncontrarRegiaoProxima(
@@ -364,7 +364,7 @@ public sealed class OperacoesService(FogoDbContext banco, TimeProvider relogio)
             {
                 alertas.Add(new AlertaOperacionalResposta(
                     "transitoAtipico", "alta", "Volume de trânsito fora do padrão",
-                    $"Índice atual de {segmento.CongestionamentoPercentual}% supera em pelo menos 25 pontos a média histórica ({Math.Round(mediaHistorica)}%). Regra heurística; validar no local.",
+                    $"Índice atual de {segmento.CongestionamentoPercentual}% está acima da média histórica da região ({Math.Round(mediaHistorica)}%).",
                     segmento.Id, segmento.Cidade, segmento.Latitude, segmento.Longitude, segmento.OrigemDados, segmento.AmostraEm));
             }
 
@@ -372,7 +372,7 @@ public sealed class OperacoesService(FogoDbContext banco, TimeProvider relogio)
             {
                 alertas.Add(new AlertaOperacionalResposta(
                     "congestionamentoPrevisto", "media", "Possível congestionamento na próxima hora",
-                    $"Projeção heurística de {segmento.CongestionamentoPrevistoPercentual}% para {segmento.HorizontePrevisto:HH:mm} (horário de Brasília), baseada em {segmento.AmostrasHistoricas} amostra(s) histórica(s) comparável(is).",
+                    $"Projeção de {segmento.CongestionamentoPrevistoPercentual}% para {segmento.HorizontePrevisto:HH:mm} (horário de Brasília), com base em {segmento.AmostrasHistoricas} observação(ões) histórica(s).",
                     segmento.Id, segmento.Cidade, segmento.Latitude, segmento.Longitude, segmento.OrigemDados, agora));
             }
         }

@@ -19,6 +19,7 @@ public interface IEquipamentoRepository
 {
     Task<int> ContarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento);
     Task<IReadOnlyCollection<Equipamento>> ListarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento);
+    Task<IReadOnlyCollection<string>> ListarTiposAsync(CancellationToken cancelamento);
     Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento);
     Task<Equipamento?> ConsultarParaAtualizacaoAsync(Guid id, CancellationToken cancelamento);
     Task<int> ContarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, CancellationToken cancelamento);

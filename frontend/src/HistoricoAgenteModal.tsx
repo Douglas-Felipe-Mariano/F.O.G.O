@@ -90,7 +90,7 @@ export default function HistoricoAgenteModal({ agente, onFechar, listar }: Props
           <div>
             <span>REGISTROS ARMAZENADOS · {origemLabel[agente.origemDados].toUpperCase()}</span>
             <h2 id="historico-agente-titulo">Localizações de {agente.nome}</h2>
-            <p>Consulte todos os pontos registrados e filtre pelo período. Os registros não representam rastreamento em tempo real.</p>
+            <p>Consulte as posições registradas e filtre os resultados por período.</p>
           </div>
           <button type="button" className="historico-agente-fechar" aria-label="Fechar histórico" onClick={onFechar}>×</button>
         </header>

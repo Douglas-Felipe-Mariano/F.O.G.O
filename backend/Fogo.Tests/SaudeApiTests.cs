@@ -195,15 +195,24 @@ public sealed class InventarioTests : IClassFixture<ConfiguracaoFogoWebApplicati
     public void ControllersMvc_ExpõemRotasDeInventario()
     {
         var provider = _fabrica.Services.GetRequiredService<IActionDescriptorCollectionProvider>();
-        var rotas = provider.ActionDescriptors.Items
+        var acoes = provider.ActionDescriptors.Items
             .OfType<ControllerActionDescriptor>()
-            .Select(acao => acao.AttributeRouteInfo?.Template)
             .ToArray();
+        var rotas = acoes.Select(acao => acao.AttributeRouteInfo?.Template).ToArray();
 
         Assert.Contains("api/equipamentos", rotas);
+        Assert.Contains("api/equipamentos/tipos", rotas);
         Assert.Contains("api/equipamentos/{id:guid}", rotas);
         Assert.Contains("api/equipamentos/localizacoes", rotas);
+        Assert.Contains("api/equipamentos/{id:guid}/desativar", rotas);
         Assert.Contains("api/indicadores/equipamentos", rotas);
+        Assert.Contains(("api/equipamentos/{id:guid}", "ConsultarEquipamento"),
+            acoes.Select(acao => (acao.AttributeRouteInfo?.Template, acao.AttributeRouteInfo?.Name)));
+        Assert.Contains("api/agentes/{id:guid}/inativar", rotas);
+        Assert.Contains(("api/agentes/{id:guid}", "ConsultarAgente"),
+            acoes.Select(acao => (acao.AttributeRouteInfo?.Template, acao.AttributeRouteInfo?.Name)));
+        Assert.Contains(("api/operacoes/acidentes/{id:guid}", "ConsultarAcidente"),
+            acoes.Select(acao => (acao.AttributeRouteInfo?.Template, acao.AttributeRouteInfo?.Name)));
     }
 
     [Fact]
@@ -219,6 +228,14 @@ public sealed class InventarioTests : IClassFixture<ConfiguracaoFogoWebApplicati
     public async Task Listar_SemBearer_RecusaAcesso()
     {
         var resposta = await _cliente.GetAsync("/api/equipamentos");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task ListarTipos_SemBearer_RecusaAcesso()
+    {
+        var resposta = await _cliente.GetAsync("/api/equipamentos/tipos");
 
         Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
     }
@@ -283,6 +300,22 @@ public sealed class InventarioTests : IClassFixture<ConfiguracaoFogoWebApplicati
     public async Task Atualizar_SemBearer_RecusaAcesso()
     {
         var resposta = await _cliente.PutAsJsonAsync($"/api/equipamentos/{Guid.NewGuid()}", CriarRequisicaoValida());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task InativarAgente_SemBearer_RecusaAcesso()
+    {
+        var resposta = await _cliente.PostAsync($"/api/agentes/{Guid.NewGuid()}/inativar", content: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task Desativar_SemBearer_RecusaAcesso()
+    {
+        var resposta = await _cliente.PostAsync($"/api/equipamentos/{Guid.NewGuid()}/desativar", content: null);
 
         Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
     }

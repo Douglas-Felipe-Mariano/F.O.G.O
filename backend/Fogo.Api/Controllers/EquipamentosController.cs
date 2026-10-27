@@ -45,7 +45,11 @@ public sealed class EquipamentosController(
         return Ok(new PaginaEquipamentosResposta(pagina, tamanhoPagina, resultado.Total, resultado.Itens));
     }
 
-    [HttpGet("{id:guid}")]
+    [HttpGet("tipos")]
+    public async Task<ActionResult<IReadOnlyCollection<string>>> ListarTiposAsync(CancellationToken cancelamento) =>
+        Ok(await service.ListarTiposAsync(cancelamento));
+
+    [HttpGet("{id:guid}", Name = "ConsultarEquipamento")]
     public async Task<ActionResult<EquipamentoResposta>> ConsultarAsync(Guid id, CancellationToken cancelamento)
     {
         var equipamento = await service.ConsultarAsync(id, cancelamento);
@@ -101,7 +105,7 @@ public sealed class EquipamentosController(
             "criado",
             equipamento.AtualizadoEm,
             cancelamento);
-        return CreatedAtAction(nameof(ConsultarAsync), new { id = equipamento.Id }, equipamento);
+        return CreatedAtRoute("ConsultarEquipamento", new { id = equipamento.Id }, equipamento);
     }
 
     [HttpPut("{id:guid}")]
@@ -131,6 +135,23 @@ public sealed class EquipamentosController(
             cancelamento);
 
         return Ok(equipamentoAtualizado);
+    }
+
+    [HttpPost("{id:guid}/desativar")]
+    public async Task<ActionResult<EquipamentoResposta>> DesativarAsync(Guid id, CancellationToken cancelamento)
+    {
+        var equipamento = await service.DesativarAsync(id, cancelamento);
+        if (equipamento is null)
+        {
+            return NotFound();
+        }
+
+        await publicadorEventos.PublicarAlteracaoAsync(
+            equipamento.Id,
+            "atualizado",
+            equipamento.AtualizadoEm,
+            cancelamento);
+        return Ok(equipamento);
     }
 
     private static Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary ModelStateFrom(

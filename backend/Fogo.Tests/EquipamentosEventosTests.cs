@@ -29,7 +29,8 @@ public sealed class EquipamentosEventosTests : IClassFixture<ConfiguracaoFogoWeb
 
         var resposta = await controller.CriarAsync(CriarRequisicaoValida(), CancellationToken.None);
 
-        var resultado = Assert.IsType<CreatedAtActionResult>(resposta.Result);
+        var resultado = Assert.IsType<CreatedAtRouteResult>(resposta.Result);
+        Assert.Equal("ConsultarEquipamento", resultado.RouteName);
         var equipamento = Assert.IsType<EquipamentoResposta>(resultado.Value);
         var evento = Assert.Single(publicador.Eventos);
         Assert.True(repositorio.Salvo);
@@ -86,6 +87,40 @@ public sealed class EquipamentosEventosTests : IClassFixture<ConfiguracaoFogoWeb
             Guid.NewGuid(),
             CriarRequisicaoValida(),
             CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(resposta.Result);
+        Assert.Empty(publicador.Eventos);
+        Assert.False(repositorio.Salvo);
+    }
+
+    [Fact]
+    public async Task Desativar_PublicaEventoDepoisDeSalvar()
+    {
+        var equipamentoExistente = CriarEntidade(Guid.NewGuid());
+        var repositorio = new RepositorioEquipamentoFalso(equipamentoExistente);
+        var publicador = new PublicadorEquipamentosFalso(() => repositorio.Salvo);
+        var controller = CriarController(repositorio, publicador);
+
+        var resposta = await controller.DesativarAsync(equipamentoExistente.Id, CancellationToken.None);
+
+        var resultado = Assert.IsType<OkObjectResult>(resposta.Result);
+        var equipamento = Assert.IsType<EquipamentoResposta>(resultado.Value);
+        var evento = Assert.Single(publicador.Eventos);
+        Assert.Equal(SituacaoEquipamento.Desativado, equipamento.Situacao);
+        Assert.True(publicador.RecebeuDepoisDaPersistencia);
+        Assert.Equal(equipamentoExistente.Id, evento.EquipamentoId);
+        Assert.Equal("atualizado", evento.Operacao);
+        Assert.Equal(equipamento.AtualizadoEm, evento.AtualizadoEm);
+    }
+
+    [Fact]
+    public async Task Desativar_EquipamentoInexistente_NaoPublicaEvento()
+    {
+        var repositorio = new RepositorioEquipamentoFalso();
+        var publicador = new PublicadorEquipamentosFalso(() => repositorio.Salvo);
+        var controller = CriarController(repositorio, publicador);
+
+        var resposta = await controller.DesativarAsync(Guid.NewGuid(), CancellationToken.None);
 
         Assert.IsType<NotFoundResult>(resposta.Result);
         Assert.Empty(publicador.Eventos);
@@ -189,6 +224,9 @@ public sealed class EquipamentosEventosTests : IClassFixture<ConfiguracaoFogoWeb
 
         public Task<IReadOnlyCollection<Equipamento>> ListarAsync(FiltrosEquipamentos filtros, CancellationToken cancelamento) =>
             Task.FromResult<IReadOnlyCollection<Equipamento>>([]);
+
+        public Task<IReadOnlyCollection<string>> ListarTiposAsync(CancellationToken cancelamento) =>
+            Task.FromResult<IReadOnlyCollection<string>>([]);
 
         public Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento) =>
             Task.FromResult<Equipamento?>(null);

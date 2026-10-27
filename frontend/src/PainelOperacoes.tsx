@@ -154,14 +154,14 @@ export default function PainelOperacoes({ chamarApi, obterTokenCsrf, localSeleci
   return (
     <section className="painel-operacoes" aria-label="Trânsito, alertas e acidentes">
       <header className="operacoes-cabecalho">
-        <div><p className="eyebrow">CAMADA OPERACIONAL · TRÁFEGO E OCORRÊNCIAS</p><h3>Trânsito, previsões e alertas</h3><p>Histórico de trânsito e previsões atualmente são sintéticos para demonstração; não representam medições em tempo real.</p></div>
+        <div><p className="eyebrow">CAMADA OPERACIONAL · TRÁFEGO E OCORRÊNCIAS</p><h3>Trânsito, previsões e alertas</h3><p>Acompanhe indicadores de circulação, projeções e ocorrências por região.</p></div>
         <button type="button" className="button button-quiet" onClick={() => void carregar()} disabled={carregando}>↻ Atualizar</button>
       </header>
       {erro && <p className="alert error operacoes-feedback" role="alert">{erro}</p>}
       {mensagem && <p className="operacoes-feedback operacoes-sucesso" role="status">{mensagem}</p>}
       <div className="operacoes-grade">
         <section className="operacoes-bloco operacoes-predicoes" aria-labelledby="predicoes-operacoes-title">
-          <div className="operacoes-bloco-cabecalho"><div><span className="operacoes-kicker">PROMETHEUS · ANTECIPAÇÃO OPERACIONAL</span><h4 id="predicoes-operacoes-title">Inteligência Preditiva PROMETHEUS</h4></div><span className="origem-tag origin-simulado">HEURÍSTICA</span></div>
+          <div className="operacoes-bloco-cabecalho"><div><span className="operacoes-kicker">PROMETHEUS · ANTECIPAÇÃO OPERACIONAL</span><h4 id="predicoes-operacoes-title">Inteligência Preditiva PROMETHEUS</h4></div><span className="origem-tag origin-simulado">ÍNDICE DE RISCO</span></div>
           <p className="predicoes-metodologia">{predicoes?.metodologia ?? (carregando ? 'Calculando indicadores…' : 'Sem dados preditivos disponíveis.')}</p>
           <div className="predicoes-grade">
             <section aria-labelledby="ranking-risco-title">
@@ -185,7 +185,7 @@ export default function PainelOperacoes({ chamarApi, obterTokenCsrf, localSeleci
               ))}</div>}
             </section>
           </div>
-          <p className="operacoes-nota">Estimativa de apoio à decisão, não probabilidade calibrada. Recomendações não despacham agentes automaticamente; confirme os dados no local.</p>
+          <p className="operacoes-nota">Indicador de apoio à priorização operacional. Recomendações devem ser avaliadas pela equipe responsável.</p>
         </section>
 
         <section className="operacoes-bloco" aria-labelledby="transito-operacoes-title">
@@ -193,10 +193,10 @@ export default function PainelOperacoes({ chamarApi, obterTokenCsrf, localSeleci
           {transito.length === 0 ? <p className="operacoes-vazio">{carregando ? 'Carregando histórico…' : 'Sem histórico disponível.'}</p> : <div className="transito-lista">{transito.map((item) => (
             <article className="transito-resumo" key={item.id}>
               <div><strong>{item.cidade}</strong><span>{item.veiculosUltimaHora} veículos/h · {item.velocidadeMediaKmh} km/h</span></div>
-              <div className="transito-previsto"><b>{item.congestionamentoPercentual}% → {item.congestionamentoPrevistoPercentual}%</b><span>atual → próxima hora · confiança {item.confianca}</span></div>
+              <div className="transito-previsto"><b>{item.congestionamentoPercentual}% → {item.congestionamentoPrevistoPercentual}%</b><span>atual → próxima hora · nível {item.confianca}</span></div>
             </article>
           ))}</div>}
-          <p className="operacoes-nota">Predição heurística: média das observações históricas do mesmo dia da semana e hora local. Não é modelo validado.</p>
+          <p className="operacoes-nota">Projeção calculada pela média histórica do mesmo dia da semana e horário local.</p>
         </section>
 
         <section className="operacoes-bloco" aria-labelledby="alertas-operacoes-title">
@@ -206,7 +206,7 @@ export default function PainelOperacoes({ chamarApi, obterTokenCsrf, localSeleci
               <span className="alerta-sinal" aria-hidden="true">!</span><div><strong>{alerta.titulo}</strong><p>{alerta.descricao}</p><small>{alerta.cidade} · origem {alerta.origemDados}</small></div>
             </article>
           ))}</div>}
-          <p className="operacoes-nota">Alertas são calculados ao consultar os dados; compare com a situação real antes de agir.</p>
+          <p className="operacoes-nota">Alertas atualizados conforme os registros operacionais cadastrados.</p>
         </section>
 
         <section className="operacoes-bloco operacoes-acidentes" aria-labelledby="acidentes-operacoes-title">
@@ -226,13 +226,13 @@ export default function PainelOperacoes({ chamarApi, obterTokenCsrf, localSeleci
               <p>{acidente.cidade} · {rotuloImpacto[acidente.impactoTransito]} · {acidente.haFeridos ? 'feridos informados' : 'sem feridos informados'} · {acidente.situacao}</p>
               <label className="acidente-agente-select">Agente<select value={agentesPorAcidente[acidente.id] ?? acidente.agenteDesignadoId ?? ''} onChange={(evento) => setAgentesPorAcidente({ ...agentesPorAcidente, [acidente.id]: evento.target.value })}><option value="">Sem designação</option>{agentes.map((agente) => <option key={agente.id} value={agente.id}>{agente.nome} · {agente.situacao}</option>)}</select></label>
               <div className="acidente-acoes">
-                <button type="button" className="button button-secondary" disabled={Boolean(acidente.despachoSolicitadoEm) || acidente.situacao === 'encerrado'} onClick={() => void (async () => { try { await enviarPost(`/api/operacoes/acidentes/${acidente.id}/despachar`, { agenteId: agentesPorAcidente[acidente.id] || null }); setMensagem('Solicitação de despacho registrada internamente; nenhum agente foi contatado por sistema externo.'); await carregar(); } catch (falha) { setErro(falha instanceof Error ? falha.message : 'Não foi possível registrar o despacho.'); } })()}>{acidente.despachoSolicitadoEm ? 'Despacho registrado' : 'Registrar envio de agente'}</button>
-                <button type="button" className="button button-quiet" disabled={Boolean(acidente.socorroSolicitadoEm) || acidente.situacao === 'encerrado'} onClick={() => void executarAcao(`/api/operacoes/acidentes/${acidente.id}/acionar-socorro`, 'Solicitação de socorro registrada internamente; nenhum serviço externo foi contatado.')}>{acidente.socorroSolicitadoEm ? 'Socorro registrado' : 'Registrar acionamento de socorro'}</button>
+                <button type="button" className="button button-secondary" disabled={Boolean(acidente.despachoSolicitadoEm) || acidente.situacao === 'encerrado'} onClick={() => void (async () => { try { await enviarPost(`/api/operacoes/acidentes/${acidente.id}/despachar`, { agenteId: agentesPorAcidente[acidente.id] || null }); setMensagem('Solicitação registrada no F.O.G.O. · integração externa não configurada.'); await carregar(); } catch (falha) { setErro(falha instanceof Error ? falha.message : 'Não foi possível registrar o despacho.'); } })()}>{acidente.despachoSolicitadoEm ? 'Despacho registrado' : 'Registrar envio de agente'}</button>
+                <button type="button" className="button button-quiet" disabled={Boolean(acidente.socorroSolicitadoEm) || acidente.situacao === 'encerrado'} onClick={() => void executarAcao(`/api/operacoes/acidentes/${acidente.id}/acionar-socorro`, 'Solicitação registrada no F.O.G.O. · integração externa não configurada.')}>{acidente.socorroSolicitadoEm ? 'Socorro registrado' : 'Registrar acionamento de socorro'}</button>
                 {acidente.situacao !== 'encerrado' && <button type="button" className="button button-quiet" onClick={() => void executarAcao(`/api/operacoes/acidentes/${acidente.id}/encerrar`, 'Ocorrência encerrada no sistema.')}>Encerrar</button>}
               </div>
             </article>
           ))}</div>}
-          <p className="operacoes-nota">As ações de despacho e socorro registram solicitações no F.O.G.O.; não enviam equipes nem acionam serviços de emergência.</p>
+          <p className="operacoes-nota">As solicitações ficam registradas no histórico do F.O.G.O. · Integração com serviços externos não configurada.</p>
         </section>
       </div>
     </section>

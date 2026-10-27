@@ -23,6 +23,14 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
             .ToArrayAsync(cancelamento);
     }
 
+    public async Task<IReadOnlyCollection<string>> ListarTiposAsync(CancellationToken cancelamento) =>
+        await banco.Equipamentos.AsNoTracking()
+            .Select(item => item.Tipo)
+            .Where(tipo => tipo != string.Empty)
+            .Distinct()
+            .OrderBy(tipo => tipo)
+            .ToArrayAsync(cancelamento);
+
     public Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento) =>
         banco.Equipamentos.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id, cancelamento);
 
@@ -165,6 +173,8 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
         IQueryable<Equipamento> consulta,
         FiltrosMapaEquipamentos filtros)
     {
+        consulta = consulta.Where(item => item.Situacao != SituacaoEquipamento.Desativado);
+
         if (!string.IsNullOrWhiteSpace(filtros.Tipo))
         {
             consulta = consulta.Where(item => item.Tipo == filtros.Tipo.Trim());

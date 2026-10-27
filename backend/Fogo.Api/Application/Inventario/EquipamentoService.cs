@@ -22,6 +22,17 @@ public sealed class EquipamentoService(
         return equipamento is null ? null : EquipamentoResposta.De(equipamento);
     }
 
+    public async Task<IReadOnlyCollection<string>> ListarTiposAsync(CancellationToken cancelamento)
+    {
+        var tipos = await repositorio.ListarTiposAsync(cancelamento);
+        return tipos
+            .Select(tipo => tipo.Trim())
+            .Where(tipo => tipo.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(tipo => tipo, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     public async Task<MapaEquipamentosResposta> ListarLocalizacoesAsync(
         FiltrosMapaEquipamentos filtros,
         int deslocamento,
@@ -132,6 +143,20 @@ public sealed class EquipamentoService(
         equipamento.AtualizadoEm = relogio.GetUtcNow();
         await repositorio.SalvarAlteracoesAsync(cancelamento);
         return ResultadoOperacao<EquipamentoResposta>.Sucesso(EquipamentoResposta.De(equipamento));
+    }
+
+    public async Task<EquipamentoResposta?> DesativarAsync(Guid id, CancellationToken cancelamento)
+    {
+        var equipamento = await repositorio.ConsultarParaAtualizacaoAsync(id, cancelamento);
+        if (equipamento is null)
+        {
+            return null;
+        }
+
+        equipamento.Situacao = SituacaoEquipamento.Desativado;
+        equipamento.AtualizadoEm = relogio.GetUtcNow();
+        await repositorio.SalvarAlteracoesAsync(cancelamento);
+        return EquipamentoResposta.De(equipamento);
     }
 
     private static Equipamento CriarEntidade(EquipamentoRequisicao requisicao, DateTimeOffset agora)

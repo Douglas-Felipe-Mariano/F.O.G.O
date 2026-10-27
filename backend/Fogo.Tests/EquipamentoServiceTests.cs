@@ -96,6 +96,39 @@ public sealed class EquipamentoServiceTests
     }
 
     [Fact]
+    public async Task DesativarAsync_EquipamentoExistente_AtualizaSituacaoEPreservaCadastro()
+    {
+        var criadoEm = new DateTimeOffset(2026, 10, 20, 8, 0, 0, TimeSpan.Zero);
+        var atualizadoEm = new DateTimeOffset(2026, 10, 27, 12, 30, 0, TimeSpan.Zero);
+        var existente = CriarEquipamentoParaAtualizacao();
+        existente.CriadoEm = criadoEm;
+        var repositorio = new RepositorioMapaFalso { EquipamentoParaAtualizacao = existente };
+        var servico = new EquipamentoService(repositorio, new RelogioFalso(atualizadoEm));
+
+        var resposta = await servico.DesativarAsync(existente.Id, CancellationToken.None);
+
+        Assert.NotNull(resposta);
+        Assert.Equal(SituacaoEquipamento.Desativado, existente.Situacao);
+        Assert.Equal(atualizadoEm, existente.AtualizadoEm);
+        Assert.Equal(criadoEm, existente.CriadoEm);
+        Assert.Equal("SER-ANTIGO", existente.NumeroSerie);
+        Assert.Equal(existente.Id, resposta.Id);
+        Assert.True(repositorio.SalvouAlteracoes);
+    }
+
+    [Fact]
+    public async Task DesativarAsync_EquipamentoInexistente_RetornaNuloESemSalvar()
+    {
+        var repositorio = new RepositorioMapaFalso();
+        var servico = new EquipamentoService(repositorio, TimeProvider.System);
+
+        var resposta = await servico.DesativarAsync(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Null(resposta);
+        Assert.False(repositorio.SalvouAlteracoes);
+    }
+
+    [Fact]
     public async Task ListarLocalizacoes_AplicaFiltrosELimiteEIndicaTruncamento()
     {
         var filtros = new FiltrosMapaEquipamentos("Radar", SituacaoEquipamento.Operacional, "Centro");
@@ -192,6 +225,20 @@ public sealed class EquipamentoServiceTests
         var resposta = await servico.ConsultarAsync(Guid.NewGuid(), CancellationToken.None);
 
         Assert.Null(resposta);
+    }
+
+    [Fact]
+    public async Task ListarTipos_NormalizaRemoveVaziosEDeduplicaSemDiferenciarMaiusculas()
+    {
+        var repositorio = new RepositorioMapaFalso
+        {
+            TiposEquipamento = [" Radar ", "Câmera", "radar", "", "  "]
+        };
+        var servico = new EquipamentoService(repositorio, TimeProvider.System);
+
+        var tipos = await servico.ListarTiposAsync(CancellationToken.None);
+
+        Assert.Equal(["Câmera", "Radar"], tipos);
     }
 
     [Fact]
@@ -297,6 +344,7 @@ public sealed class EquipamentoServiceTests
         public Equipamento? EquipamentoConsultado { get; init; }
         public Guid? IdConsultado { get; private set; }
         public int TotalInventario { get; init; }
+        public IReadOnlyCollection<string> TiposEquipamento { get; init; } = [];
         public IReadOnlyCollection<Equipamento> ItensInventario { get; init; } = [];
         public IReadOnlyCollection<ContagemSituacao> ContagensPorSituacao { get; init; } = [];
         public int TotalManutencoes { get; init; }
@@ -346,6 +394,9 @@ public sealed class EquipamentoServiceTests
             FiltrosListagemInventario = filtros;
             return Task.FromResult(ItensInventario);
         }
+
+        public Task<IReadOnlyCollection<string>> ListarTiposAsync(CancellationToken cancelamento) =>
+            Task.FromResult(TiposEquipamento);
 
         public Task<Equipamento?> ConsultarAsync(Guid id, CancellationToken cancelamento)
         {
