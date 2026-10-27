@@ -57,6 +57,75 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
     public Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento) =>
         banco.Equipamentos.AsNoTracking().CountAsync(item => item.NecessitaManutencao, cancelamento);
 
+    public Task<int> ContarManutencoesImediatasAsync(CancellationToken cancelamento) =>
+        banco.Equipamentos.AsNoTracking().CountAsync(
+            item => item.NecessitaManutencao && item.TipoManutencao == TipoManutencao.Imediata,
+            cancelamento);
+
+    public Task<int> ContarManutencoesComDataAteAsync(DateOnly limite, CancellationToken cancelamento) =>
+        banco.Equipamentos.AsNoTracking().CountAsync(
+            item => item.NecessitaManutencao
+                && item.TipoManutencao != TipoManutencao.Imediata
+                && item.ProximaManutencao < limite,
+            cancelamento);
+
+    public Task<int> ContarManutencoesEntreAsync(DateOnly inicio, DateOnly fim, CancellationToken cancelamento) =>
+        banco.Equipamentos.AsNoTracking().CountAsync(
+            item => item.NecessitaManutencao
+                && item.TipoManutencao != TipoManutencao.Imediata
+                && item.ProximaManutencao >= inicio
+                && item.ProximaManutencao <= fim,
+            cancelamento);
+
+    public async Task<IReadOnlyCollection<ResumoOperacionalLocalidade>> ConsultarResumoPorLocalidadeAsync(
+        DateOnly hoje,
+        DateOnly fimJanelaAviso,
+        CancellationToken cancelamento) =>
+        await banco.Equipamentos.AsNoTracking()
+            .GroupBy(item => new { item.Bairro, item.Cidade, item.Uf })
+            .Select(grupo => new ResumoOperacionalLocalidade(
+                grupo.Key.Bairro,
+                grupo.Key.Cidade,
+                grupo.Key.Uf,
+                grupo.Count(),
+                grupo.Count(item => item.Situacao != SituacaoEquipamento.AindaNaoInstalado),
+                grupo.Count(item => item.Situacao == SituacaoEquipamento.Operacional),
+                grupo.Count(item => item.Situacao != SituacaoEquipamento.AindaNaoInstalado
+                    && item.Situacao != SituacaoEquipamento.Operacional),
+                grupo.Count(item => item.NecessitaManutencao && item.TipoManutencao == TipoManutencao.Imediata),
+                grupo.Count(item => item.NecessitaManutencao
+                    && item.TipoManutencao != TipoManutencao.Imediata
+                    && item.ProximaManutencao < hoje),
+                grupo.Count(item => item.NecessitaManutencao
+                    && item.TipoManutencao != TipoManutencao.Imediata
+                    && item.ProximaManutencao >= hoje
+                    && item.ProximaManutencao <= fimJanelaAviso)))
+            .OrderBy(item => item.Cidade)
+            .ThenBy(item => item.Bairro)
+            .ThenBy(item => item.Uf)
+            .ToArrayAsync(cancelamento);
+
+    public async Task<IReadOnlyCollection<ProjecaoManutencaoLocalidade>> ConsultarProjecaoManutencaoAsync(
+        DateOnly hoje,
+        DateOnly fimHorizonte,
+        CancellationToken cancelamento) =>
+        await banco.Equipamentos.AsNoTracking()
+            .Where(item => item.NecessitaManutencao
+                && item.TipoManutencao != TipoManutencao.Imediata
+                && item.ProximaManutencao >= hoje
+                && item.ProximaManutencao <= fimHorizonte)
+            .GroupBy(item => new { item.Bairro, item.Cidade, item.Uf, Data = item.ProximaManutencao!.Value })
+            .Select(grupo => new ProjecaoManutencaoLocalidade(
+                grupo.Key.Bairro,
+                grupo.Key.Cidade,
+                grupo.Key.Uf,
+                grupo.Key.Data,
+                grupo.Count()))
+            .OrderBy(item => item.Data)
+            .ThenBy(item => item.Cidade)
+            .ThenBy(item => item.Bairro)
+            .ToArrayAsync(cancelamento);
+
     public async Task AdicionarAsync(Equipamento equipamento, CancellationToken cancelamento)
     {
         banco.Equipamentos.Add(equipamento);

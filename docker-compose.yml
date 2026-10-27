@@ -26,8 +26,19 @@ services:
       FOGO_JWT_KEY: ${FOGO_JWT_KEY:?Defina FOGO_JWT_KEY no arquivo .env}
       FOGO_ORIGINS: ${FOGO_ORIGINS:-http://localhost:8080;http://127.0.0.1:8080}
       FOGO_COOKIES_SEGUROS: ${FOGO_COOKIES_SEGUROS:-false}
+      FOGO_PUBLIC_URL: ${FOGO_PUBLIC_URL:-http://localhost:8080}
+      FOGO_SMTP_HOST: ${FOGO_SMTP_HOST:-}
+      FOGO_SMTP_PORT: ${FOGO_SMTP_PORT:-587}
+      FOGO_SMTP_USER: ${FOGO_SMTP_USER:-}
+      FOGO_SMTP_PASSWORD: ${FOGO_SMTP_PASSWORD:-}
+      FOGO_SMTP_FROM: ${FOGO_SMTP_FROM:-}
+      FOGO_SMTP_FROM_NAME: ${FOGO_SMTP_FROM_NAME:-F.O.G.O.}
+      FOGO_SMTP_SECURITY: ${FOGO_SMTP_SECURITY:-StartTls}
+      FOGO_DATA_PROTECTION_KEYS_PATH: /var/lib/fogo/keys
       FOGO_APLICAR_MIGRATIONS: "true"
       FOGO_HTTPS_REDIRECIONAR: "false"
+    volumes:
+      - dados_protecao_chaves:/var/lib/fogo/keys
     depends_on:
       banco:
         condition: service_healthy
@@ -52,3 +63,4 @@ services:
 
 volumes:
   dados_postgres:
+  dados_protecao_chaves:

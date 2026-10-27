@@ -107,6 +107,25 @@ public sealed class AutenticacaoTests : IClassFixture<ConfiguracaoFogoWebApplica
         Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
     }
 
+    [Theory]
+    [InlineData("/api/autenticacao/cadastro")]
+    [InlineData("/api/autenticacao/confirmar-email")]
+    [InlineData("/api/autenticacao/reenviar-confirmacao")]
+    [InlineData("/api/autenticacao/esqueci-senha")]
+    [InlineData("/api/autenticacao/redefinir-senha")]
+    public async Task FluxosPublicosDeEmail_SemTokenCsrf_RecusamAcesso(string rota)
+    {
+        using var requisicao = new HttpRequestMessage(HttpMethod.Post, rota)
+        {
+            Content = JsonContent.Create(new { email = "usuario@example.test", senha = "Senha-Forte-123!", token = "token" })
+        };
+        requisicao.Headers.Add("Origin", "http://localhost:5173");
+
+        var resposta = await _cliente.SendAsync(requisicao);
+
+        Assert.Equal(HttpStatusCode.Forbidden, resposta.StatusCode);
+    }
+
     [Fact]
     public async Task EmitirCsrf_CriaCookieLegivelComPathRaiz()
     {

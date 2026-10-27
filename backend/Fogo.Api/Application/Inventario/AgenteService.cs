@@ -25,7 +25,10 @@ public sealed class AgenteService(IAgenteRepository repositorio, TimeProvider re
     public async Task<IndicadoresAgentesResposta> ConsultarIndicadoresAsync(CancellationToken cancelamento)
     {
         var porSituacao = await repositorio.ContarPorSituacaoAsync(cancelamento);
-        return new IndicadoresAgentesResposta(porSituacao.Sum(item => item.Quantidade), porSituacao);
+        var emAtividadeDeclarada = porSituacao
+            .Where(item => item.Situacao is SituacaoAgente.Disponivel or SituacaoAgente.EmAtendimento)
+            .Sum(item => item.Quantidade);
+        return new IndicadoresAgentesResposta(porSituacao.Sum(item => item.Quantidade), porSituacao, emAtividadeDeclarada);
     }
 
     public async Task<MapaAgentesResposta> ListarLocalizacoesAsync(int deslocamento, int limite, CancellationToken cancelamento)

@@ -29,6 +29,28 @@ public static class ValidadorEquipamento
         ValidarOpcional(requisicao.Marca, 100, nameof(requisicao.Marca), Adicionar);
         ValidarOpcional(requisicao.Modelo, 120, nameof(requisicao.Modelo), Adicionar);
         ValidarOpcional(requisicao.Referencia, 240, nameof(requisicao.Referencia), Adicionar);
+        if (requisicao.Caracteristicas is { } caracteristicas)
+        {
+            if (caracteristicas.Count > 30)
+            {
+                Adicionar(nameof(requisicao.Caracteristicas), "Informe no máximo 30 características por equipamento.");
+            }
+
+            foreach (var (chave, valor) in caracteristicas)
+            {
+                if (string.IsNullOrWhiteSpace(chave) || chave.Trim().Length > 60)
+                {
+                    Adicionar(nameof(requisicao.Caracteristicas), "Cada nome de característica deve ter entre 1 e 60 caracteres.");
+                    break;
+                }
+
+                if (valor is null || valor.Length > 500)
+                {
+                    Adicionar(nameof(requisicao.Caracteristicas), "Cada valor de característica deve ter no máximo 500 caracteres.");
+                    break;
+                }
+            }
+        }
 
         if (requisicao.Latitude.HasValue != requisicao.Longitude.HasValue)
         {

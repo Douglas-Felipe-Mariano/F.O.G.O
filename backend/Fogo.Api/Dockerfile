@@ -14,6 +14,7 @@ RUN dotnet publish backend/Fogo.Api/Fogo.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
+RUN mkdir -p /var/lib/fogo/keys && chown -R $APP_UID:$APP_UID /var/lib/fogo
 
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080

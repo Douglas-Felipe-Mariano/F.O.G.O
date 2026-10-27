@@ -68,7 +68,8 @@ public sealed record ContagemSituacaoAgente(SituacaoAgente Situacao, int Quantid
 
 public sealed record IndicadoresAgentesResposta(
     int TotalCadastrado,
-    IReadOnlyCollection<ContagemSituacaoAgente> PorSituacao);
+    IReadOnlyCollection<ContagemSituacaoAgente> PorSituacao,
+    int EmAtividadeDeclarada);
 
 public sealed record LocalizacaoAgenteResposta(
     Guid Id,

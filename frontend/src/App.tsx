@@ -8,6 +8,8 @@ import './Visoes.css';
 import './FilaManutencao.css';
 import './MapaInicio.css';
 import './MapaTrajeto.css';
+import './MapaAlertas.css';
+import './PainelOperacional.css';
 
 type SituacaoEquipamento = 'aindaNaoInstalado' | 'operacional' | 'mauFuncionamento' | 'emManutencao' | 'desativado' | 'furtado';
 type TipoManutencao = 'imediata' | 'agendada' | 'periodica';
@@ -19,6 +21,7 @@ type Equipamento = {
   numeroSerie: string;
   marca: string | null;
   modelo: string | null;
+  caracteristicas: Record<string, string>;
   cep: string;
   bairro: string;
   cidade: string;
@@ -38,7 +41,10 @@ type Equipamento = {
 
 type EquipamentoRequisicao = Omit<Equipamento, 'id' | 'criadoEm' | 'atualizadoEm'>;
 type PaginaEquipamentos = { pagina: number; tamanhoPagina: number; totalRegistros: number; itens: Equipamento[] };
-type Indicadores = { totalCadastrado: number; porSituacao: { situacao: SituacaoEquipamento; quantidade: number }[]; necessitamManutencao: number };
+type ResumoLocalidade = { bairro: string; cidade: string; uf: string; totalCadastrado: number; totalInstalado: number; operacionais: number; indisponiveis: number; manutencoesImediatas: number; manutencoesVencidas: number; manutencoesProximas: number };
+type ProjecaoManutencao = { bairro: string; cidade: string; uf: string; data: string; quantidade: number };
+type Indicadores = { totalCadastrado: number; porSituacao: { situacao: SituacaoEquipamento; quantidade: number }[]; necessitamManutencao: number; manutencoesImediatas: number; totalInstalados: number; operacionais: number; indisponiveis: number; percentualDisponibilidade: number | null; manutencoesVencidas: number; manutencoesProximas: number; porLocalidade: ResumoLocalidade[]; projecaoManutencao: ProjecaoManutencao[]; inicioProjecao: string; fimProjecao: string };
+type IndicadoresAgentes = { totalCadastrado: number; emAtividadeDeclarada: number; porSituacao: { situacao: string; quantidade: number }[] };
 type RespostaToken = { tokenAcesso: string; expiraEm: string };
 type EventoEquipamentoAlterado = { equipamentoId: string; operacao: 'criado' | 'atualizado'; atualizadoEm: string };
 
@@ -50,6 +56,8 @@ type RespostaRadaresOpenStreetMap = { disponivel: boolean; fonte: string; aviso:
 type RespostaCamerasPublicas = { total: number; itens: CameraPublica[] };
 type TrajetoAgente = { agenteId: string; nomeAgente: string; data: string; historicoDisponivel: boolean; mensagem: string; localizacoes: PontoHistoricoAgente[] };
 type LocalizacaoUsuario = { latitude: number; longitude: number };
+type AcaoLinkEmail = 'confirmar' | 'redefinir';
+type ModoAutenticacao = 'entrar' | 'cadastro' | 'recuperacao' | 'confirmar' | 'redefinir';
 const tamanhoLoteMapa = 1000;
 const dataHojeLocal = () => {
   const hoje = new Date();
@@ -76,16 +84,29 @@ const vazioFiltros: Filtros = { tipo: '', situacao: '', bairro: '' };
 const semLocalizacoesEquipamentos: LocalizacaoEquipamento[] = [];
 const semLocalizacoesAgentes: LocalizacaoAgente[] = [];
 const vazioFormulario = (): EquipamentoRequisicao => ({
-  tipo: '', numeroSerie: '', marca: '', modelo: '', cep: '', bairro: '', cidade: '', uf: '', rua: '', referencia: '',
+  tipo: '', numeroSerie: '', marca: '', modelo: '', caracteristicas: {}, cep: '', bairro: '', cidade: '', uf: '', rua: '', referencia: '',
   latitude: null, longitude: null, situacao: 'operacional', necessitaManutencao: false,
   tipoManutencao: null, proximaManutencao: null, origemDados: 'manual',
 });
 
 function App() {
+  const [linkEmail] = useState(() => {
+    const url = new URL(window.location.href);
+    const acao = url.searchParams.get('acao');
+    const email = url.searchParams.get('email');
+    const tokenLink = url.searchParams.get('token');
+    if ((acao === 'confirmar' || acao === 'redefinir') && email && tokenLink) {
+      return { acao: acao as AcaoLinkEmail, email, token: tokenLink };
+    }
+    return null;
+  });
+  const [modoAutenticacao, setModoAutenticacao] = useState<ModoAutenticacao>(() =>
+    linkEmail?.acao === 'confirmar' ? 'confirmar' : linkEmail?.acao === 'redefinir' ? 'redefinir' : 'entrar');
   const [token, setToken] = useState<string | null>(null);
   const [preparandoSessao, setPreparandoSessao] = useState(true);
   const [itens, setItens] = useState<Equipamento[]>([]);
   const [indicadores, setIndicadores] = useState<Indicadores | null>(null);
+  const [indicadoresAgentes, setIndicadoresAgentes] = useState<IndicadoresAgentes | null>(null);
   const [mapa, setMapa] = useState<RespostaMapa | null>(null);
   const [mapaAgentes, setMapaAgentes] = useState<RespostaMapaAgentes | null>(null);
   const [radaresOpenStreetMap, setRadaresOpenStreetMap] = useState<RespostaRadaresOpenStreetMap | null>(null);
@@ -117,8 +138,16 @@ function App() {
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState<Equipamento | null>(null);
   const [formulario, setFormulario] = useState<EquipamentoRequisicao>(vazioFormulario);
+  const [caracteristicasJson, setCaracteristicasJson] = useState('{}');
   const [credenciais, setCredenciais] = useState({ identificador: '', senha: '' });
+  const [emailAutenticacao, setEmailAutenticacao] = useState(linkEmail?.email ?? '');
+  const [senhaNova, setSenhaNova] = useState('');
+  const [confirmacaoSenha, setConfirmacaoSenha] = useState('');
   const emissaoCsrfEmAndamento = useRef<Promise<string> | null>(null);
+
+  useEffect(() => {
+    if (linkEmail) window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+  }, [linkEmail]);
 
   const obterTokenCsrf = useCallback((renovar = false): Promise<string> => {
     const existente = lerCookie('fogo.csrf');
@@ -171,14 +200,16 @@ function App() {
       if (pesquisa.situacao) parametros.set('situacao', pesquisa.situacao);
       if (pesquisa.bairro) parametros.set('bairro', pesquisa.bairro);
       if (pesquisaManutencao) parametros.set('necessitaManutencao', pesquisaManutencao);
-      const [respostaLista, respostaIndicadores] = await Promise.all([
+      const [respostaLista, respostaIndicadores, respostaIndicadoresAgentes] = await Promise.all([
         chamarApi(`/api/equipamentos?${parametros}`),
         chamarApi('/api/indicadores/equipamentos'),
+        chamarApi('/api/agentes/indicadores'),
       ]);
       const lista = await respostaLista.json() as PaginaEquipamentos;
       setItens(lista.itens);
       setTotal(lista.totalRegistros);
       setIndicadores(await respostaIndicadores.json() as Indicadores);
+      setIndicadoresAgentes(await respostaIndicadoresAgentes.json() as IndicadoresAgentes);
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar os equipamentos.');
     } finally {
@@ -400,6 +431,107 @@ function App() {
     }
   }
 
+  async function enviarFormularioAutenticacao(caminho: string, dados: Record<string, string>) {
+    const csrf = await obterTokenCsrf();
+    const resposta = await fetch(`/api/autenticacao/${caminho}`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
+      body: JSON.stringify(dados),
+    });
+    const corpo = await resposta.json().catch(() => null) as { mensagem?: string; title?: string; errors?: Record<string, string[]> } | null;
+    if (!resposta.ok) {
+      const errosCampos = corpo?.errors ? Object.values(corpo.errors).flat().join(' ') : '';
+      throw new Error(errosCampos || corpo?.mensagem || corpo?.title || (resposta.status === 403
+        ? 'A API recusou a origem ou a proteção CSRF. Atualize a página e confira FOGO_ORIGINS.'
+        : 'Não foi possível concluir a solicitação. Confira os dados e tente novamente.'));
+    }
+    return corpo;
+  }
+
+  async function cadastrar(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    setErro('');
+    setMensagem('');
+    if (senhaNova !== confirmacaoSenha) {
+      setErro('As senhas não coincidem.');
+      return;
+    }
+    try {
+      const resposta = await enviarFormularioAutenticacao('cadastro', { email: emailAutenticacao, senha: senhaNova });
+      setMensagem(resposta?.mensagem ?? 'Se o cadastro puder ser concluído, enviaremos as instruções para o endereço informado.');
+      setSenhaNova('');
+      setConfirmacaoSenha('');
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível criar a conta.');
+    }
+  }
+
+  async function recuperarSenha(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    setErro('');
+    setMensagem('');
+    try {
+      const resposta = await enviarFormularioAutenticacao('esqueci-senha', { email: emailAutenticacao });
+      setMensagem(resposta?.mensagem ?? 'Se houver uma conta associada ao endereço, enviaremos as instruções de recuperação.');
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível solicitar a recuperação.');
+    }
+  }
+
+  async function reenviarConfirmacao(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    setErro('');
+    setMensagem('');
+    try {
+      const resposta = await enviarFormularioAutenticacao('reenviar-confirmacao', { email: emailAutenticacao });
+      setMensagem(resposta?.mensagem ?? 'Se houver uma conta pendente, enviaremos novas instruções.');
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível reenviar a confirmação.');
+    }
+  }
+
+  async function confirmarEmail(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    if (!linkEmail) return;
+    setErro('');
+    setMensagem('');
+    try {
+      await enviarFormularioAutenticacao('confirmar-email', { email: linkEmail.email, token: linkEmail.token });
+      setMensagem('E-mail confirmado. Agora você já pode entrar.');
+      setModoAutenticacao('entrar');
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'O link de confirmação é inválido ou expirou.');
+    }
+  }
+
+  async function redefinirSenha(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    if (!linkEmail || linkEmail.acao !== 'redefinir') return;
+    setErro('');
+    setMensagem('');
+    if (senhaNova !== confirmacaoSenha) {
+      setErro('As senhas não coincidem.');
+      return;
+    }
+    try {
+      await enviarFormularioAutenticacao('redefinir-senha', {
+        email: linkEmail.email, token: linkEmail.token, novaSenha: senhaNova,
+      });
+      setSenhaNova('');
+      setConfirmacaoSenha('');
+      setMensagem('Senha alterada. Entre novamente com a nova senha.');
+      setModoAutenticacao('entrar');
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível redefinir a senha.');
+    }
+  }
+
+  function trocarModoAutenticacao(modo: ModoAutenticacao) {
+    setErro('');
+    setMensagem('');
+    setModoAutenticacao(modo);
+  }
+
   async function sair() {
     try {
       const csrf = lerCookie('fogo.csrf');
@@ -421,6 +553,7 @@ function App() {
   function abrirNovo() {
     setEditando(null);
     setFormulario(vazioFormulario());
+    setCaracteristicasJson('{}');
     setModalAberto(true);
   }
 
@@ -435,8 +568,10 @@ function App() {
 
   function abrirEdicao(equipamento: Equipamento) {
     setEditando(equipamento);
+    setCaracteristicasJson(JSON.stringify(equipamento.caracteristicas ?? {}, null, 2));
     setFormulario({
       tipo: equipamento.tipo, numeroSerie: equipamento.numeroSerie, marca: equipamento.marca ?? '', modelo: equipamento.modelo ?? '',
+      caracteristicas: equipamento.caracteristicas ?? {},
       cep: equipamento.cep, bairro: equipamento.bairro, cidade: equipamento.cidade, uf: equipamento.uf, rua: equipamento.rua,
       referencia: equipamento.referencia ?? '', latitude: equipamento.latitude, longitude: equipamento.longitude,
       situacao: equipamento.situacao, necessitaManutencao: equipamento.necessitaManutencao,
@@ -489,8 +624,23 @@ function App() {
     evento.preventDefault();
     setErro('');
     setMensagem('');
+    let caracteristicas: Record<string, string>;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(caracteristicasJson || '{}');
+    } catch {
+      setErro('Características inválidas: informe um objeto JSON, por exemplo {"visão noturna":"sim"}.');
+      return;
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)
+      || Object.values(parsed).some((valor) => typeof valor !== 'string')) {
+      setErro('Use um objeto JSON com nomes e valores de texto.');
+      return;
+    }
+    caracteristicas = parsed as Record<string, string>;
     const corpo = {
       ...formulario,
+      caracteristicas,
       marca: formulario.marca || null,
       modelo: formulario.modelo || null,
       referencia: formulario.referencia || null,
@@ -531,18 +681,57 @@ function App() {
           <div className="login-copy">
             <p className="eyebrow"><span>PLATAFORMA OPERACIONAL</span> · ACESSO RESTRITO</p>
             <h1>Dados reais.<br /><em>Decisões melhores.</em></h1>
-            <p className="intro">Acesse o inventário operacional do F.O.G.O. O cadastro é controlado; solicite acesso ao administrador do sistema.</p>
-            <div className="login-notice"><span aria-hidden="true">↳</span> Nenhum dado de demonstração está sendo exibido.</div>
+            <p className="intro">Acesse ou crie sua conta para consultar o inventário operacional do F.O.G.O. O login é liberado após a confirmação do e-mail.</p>
+            <div className="login-notice"><span aria-hidden="true">↳</span> O cadastro está aberto e ainda não há níveis diferenciados de permissão.</div>
           </div>
-          <form className="login-card" onSubmit={(evento) => void entrar(evento)}>
+          <div className="login-card">
             <div className="card-kicker">01 / AUTENTICAÇÃO</div>
-            <h2>Entrar na plataforma</h2>
-            <label>Usuário ou e-mail<input autoComplete="username" required value={credenciais.identificador} onChange={(e) => setCredenciais({ ...credenciais, identificador: e.target.value })} /></label>
-            <label>Senha<input type="password" autoComplete="current-password" required value={credenciais.senha} onChange={(e) => setCredenciais({ ...credenciais, senha: e.target.value })} /></label>
-            {erro && <p className="alert error" role="alert">{erro}</p>}
-            <button className="button button-primary" type="submit" disabled={preparandoSessao}>{preparandoSessao ? 'Preparando acesso…' : <>Entrar <span aria-hidden="true">↗</span></>}</button>
-            <p className="form-hint">A sessão usa token de acesso curto e cookie de atualização protegido.</p>
-          </form>
+            <h2>{modoAutenticacao === 'entrar' ? 'Entrar na plataforma'
+              : modoAutenticacao === 'cadastro' ? 'Criar uma conta'
+                : modoAutenticacao === 'recuperacao' ? 'Recuperar senha'
+                  : modoAutenticacao === 'confirmar' ? 'Confirmar endereço de e-mail'
+                    : 'Definir nova senha'}</h2>
+            {modoAutenticacao === 'entrar' && <form onSubmit={(evento) => void entrar(evento)}>
+              <label>Usuário ou e-mail<input autoComplete="username" required value={credenciais.identificador} onChange={(e) => setCredenciais({ ...credenciais, identificador: e.target.value })} /></label>
+              <label>Senha<input type="password" autoComplete="current-password" required value={credenciais.senha} onChange={(e) => setCredenciais({ ...credenciais, senha: e.target.value })} /></label>
+              {erro && <p className="alert error" role="alert">{erro}</p>}
+              {mensagem && <p className="alert success" role="status">{mensagem}</p>}
+              <button className="button button-primary" type="submit" disabled={preparandoSessao}>{preparandoSessao ? 'Preparando acesso…' : <>Entrar <span aria-hidden="true">↗</span></>}</button>
+              <div className="login-links"><button className="auth-link" type="button" onClick={() => trocarModoAutenticacao('recuperacao')}>Esqueci minha senha</button><button className="auth-link" type="button" onClick={() => trocarModoAutenticacao('cadastro')}>Criar conta</button></div>
+              <p className="form-hint">A sessão usa token de acesso curto e cookie de atualização protegido.</p>
+            </form>}
+            {modoAutenticacao === 'cadastro' && <form onSubmit={(evento) => void cadastrar(evento)}>
+              <label>E-mail<input type="email" autoComplete="email" maxLength={256} required value={emailAutenticacao} onChange={(e) => setEmailAutenticacao(e.target.value)} /></label>
+              <label>Senha<input type="password" autoComplete="new-password" minLength={12} required value={senhaNova} onChange={(e) => setSenhaNova(e.target.value)} /></label>
+              <label>Confirme a senha<input type="password" autoComplete="new-password" minLength={12} required value={confirmacaoSenha} onChange={(e) => setConfirmacaoSenha(e.target.value)} /></label>
+              <p className="form-hint">Use pelo menos 12 caracteres, com maiúscula, minúscula, número e símbolo. O link de confirmação expira em 2 horas.</p>
+              {erro && <p className="alert error" role="alert">{erro}</p>}{mensagem && <p className="alert success" role="status">{mensagem}</p>}
+              <button className="button button-primary" type="submit">Enviar confirmação</button>
+              <div className="login-links"><button className="auth-link" type="button" onClick={() => trocarModoAutenticacao('entrar')}>Voltar para entrar</button></div>
+            </form>}
+            {modoAutenticacao === 'recuperacao' && <form onSubmit={(evento) => void recuperarSenha(evento)}>
+              <p className="form-hint">Informe o e-mail da conta. Se ela existir, enviaremos um link válido por 2 horas.</p>
+              <label>E-mail<input type="email" autoComplete="email" maxLength={256} required value={emailAutenticacao} onChange={(e) => setEmailAutenticacao(e.target.value)} /></label>
+              {erro && <p className="alert error" role="alert">{erro}</p>}{mensagem && <p className="alert success" role="status">{mensagem}</p>}
+              <button className="button button-primary" type="submit">Enviar instruções</button>
+              <div className="login-links"><button className="auth-link" type="button" onClick={() => trocarModoAutenticacao('entrar')}>Voltar para entrar</button></div>
+            </form>}
+            {modoAutenticacao === 'confirmar' && <form onSubmit={(evento) => linkEmail ? void confirmarEmail(evento) : void reenviarConfirmacao(evento)}>
+              {linkEmail ? <p className="form-hint">Confirme o endereço {linkEmail.email} para habilitar o acesso.</p> : <><p className="form-hint">O link não está disponível. Informe seu e-mail para solicitar outro.</p><label>E-mail<input type="email" autoComplete="email" maxLength={256} required value={emailAutenticacao} onChange={(e) => setEmailAutenticacao(e.target.value)} /></label></>}
+              {erro && <p className="alert error" role="alert">{erro}</p>}{mensagem && <p className="alert success" role="status">{mensagem}</p>}
+              <button className="button button-primary" type="submit">{linkEmail ? 'Confirmar e-mail' : 'Reenviar confirmação'}</button>
+              <div className="login-links"><button className="auth-link" type="button" onClick={() => trocarModoAutenticacao('entrar')}>Voltar para entrar</button></div>
+            </form>}
+            {modoAutenticacao === 'redefinir' && <form onSubmit={(evento) => void redefinirSenha(evento)}>
+              {linkEmail ? <><p className="form-hint">Defina uma nova senha para {linkEmail.email}. O link é válido por 2 horas.</p>
+                <label>Nova senha<input type="password" autoComplete="new-password" minLength={12} required value={senhaNova} onChange={(e) => setSenhaNova(e.target.value)} /></label>
+                <label>Confirme a nova senha<input type="password" autoComplete="new-password" minLength={12} required value={confirmacaoSenha} onChange={(e) => setConfirmacaoSenha(e.target.value)} /></label></>
+                : <p className="form-hint">Link ausente ou inválido. Solicite uma nova recuperação de senha.</p>}
+              {erro && <p className="alert error" role="alert">{erro}</p>}{mensagem && <p className="alert success" role="status">{mensagem}</p>}
+              {linkEmail && <button className="button button-primary" type="submit">Salvar nova senha</button>}
+              <div className="login-links"><button className="auth-link" type="button" onClick={() => trocarModoAutenticacao(linkEmail ? 'entrar' : 'recuperacao')}>{linkEmail ? 'Voltar para entrar' : 'Solicitar novo link'}</button></div>
+            </form>}
+          </div>
         </section>
       ) : (
         <section className={`workspace ${visao === 'mapa' ? 'workspace-map' : ''}`} id="inicio">
@@ -604,6 +793,18 @@ function App() {
                 <p className="eyebrow">DISTRIBUIÇÃO GEOGRÁFICA · TODOS OS REGISTROS COM COORDENADAS</p>
                 <h2 id="mapa-title">Mapa operacional <span>({mapa?.totalComCoordenadas ?? '—'} equipamentos · {mapaAgentes?.totalComCoordenadas ?? '—'} agentes · {camerasPublicas.length} câmeras · {radaresOpenStreetMap?.itens.length ?? '—'} radares OSM)</span></h2>
                 <p className="mapa-descricao">Mapa interativo com dados cadastrados e pontos públicos mapeados. A localização do navegador só é usada nesta sessão, após sua autorização.</p>
+                <div className="mapa-indicadores-situacao" aria-label="Quantidade de equipamentos cadastrados por situação">
+                  <span className="mapa-indicadores-titulo">EQUIPAMENTOS POR SITUAÇÃO · CADASTRO</span>
+                  {estados.map((estado) => <span key={estado.valor}><i className={`situacao-indicador situacao-${estado.valor}`} />{estado.rotulo}<strong>{indicadores?.porSituacao.find((item) => item.situacao === estado.valor)?.quantidade ?? 0}</strong></span>)}
+                </div>
+                <div className="mapa-kpis" aria-label="Indicadores operacionais declarados">
+                  <span><small>INSTALADOS</small><strong>{indicadores?.totalInstalados ?? '—'}</strong></span>
+                  <span><small>OPERACIONAIS</small><strong>{indicadores?.operacionais ?? '—'}</strong></span>
+                  <span><small>INDISPONÍVEIS</small><strong>{indicadores?.indisponiveis ?? '—'}</strong></span>
+                  <span><small>DISPONIBILIDADE DECLARADA</small><strong>{indicadores?.percentualDisponibilidade == null ? '—' : `${indicadores.percentualDisponibilidade}%`}</strong></span>
+                  <span><small>AGENTES DISPONÍVEIS/EM ATENDIMENTO · INFORMADO</small><strong>{indicadoresAgentes?.emAtividadeDeclarada ?? '—'} / {indicadoresAgentes?.totalCadastrado ?? '—'}</strong></span>
+                </div>
+                <p className="mapa-indicadores-nota">Disponibilidade = operacionais ÷ equipamentos instalados (não inclui “ainda não instalado”). Situações e atividade dos agentes são informações declaradas manualmente, não telemetria.</p>
               </div>
               <div className="mapa-acoes">
                 <div className="mapa-legenda" aria-label="Legenda do mapa"><span><i className="legenda-equipamento" />Equipamentos</span><span><i className="legenda-agente" />Agentes</span></div>
@@ -619,6 +820,7 @@ function App() {
               </div>
             </div>
             {trajetoAgente && <div className="mapa-alerta mapa-trajeto-status" role="status"><span><strong>{trajetoAgente.nomeAgente}</strong> · {new Intl.DateTimeFormat('pt-BR').format(new Date(`${trajetoAgente.data}T00:00:00`))} · {trajetoAgente.mensagem} {trajetoAgente.historicoDisponivel && `${trajetoAgente.localizacoes.length} posições registradas.`}</span><button type="button" onClick={() => setTrajetoAgente(null)}>Limpar trajeto</button></div>}
+            {indicadores && (indicadores.manutencoesImediatas + indicadores.manutencoesVencidas + indicadores.manutencoesProximas > 0) && <div className="mapa-alerta mapa-alerta-manutencao" role="status"><span>{indicadores.manutencoesImediatas > 0 && <strong>{indicadores.manutencoesImediatas} imediata(s) declarada(s). </strong>}{indicadores.manutencoesVencidas > 0 && <strong>{indicadores.manutencoesVencidas} agendada(s) vencida(s). </strong>}{indicadores.manutencoesProximas > 0 && <strong>{indicadores.manutencoesProximas} prevista(s) nos próximos 7 dias.</strong>}</span><button type="button" onClick={abrirFilaManutencao}>Consultar fila →</button></div>}
             {carregandoTrajeto && <div className="mapa-alerta" role="status">Consultando posições registradas do agente…</div>}
             <form className="filters map-filters" onSubmit={(evento) => { evento.preventDefault(); setPesquisaMapa(filtrosMapa); }}>
               <label>Tipo<input placeholder="Ex.: radar" value={filtrosMapa.tipo} onChange={(evento) => setFiltrosMapa({ ...filtrosMapa, tipo: evento.target.value })} /></label>
@@ -633,6 +835,8 @@ function App() {
             </div>}
             {mapaAgentes?.resultadoTruncado && <div className="mapa-alerta" role="status"><span>Alguns agentes não foram carregados. Atualize o mapa para tentar novamente.</span></div>}
             {radaresOpenStreetMap && !radaresOpenStreetMap.disponivel && <div className="mapa-alerta mapa-alerta-fonte" role="status">{radaresOpenStreetMap.aviso}</div>}
+            {indicadores?.porLocalidade.length ? <details className="painel-insights"><summary>Consolidação por localidade cadastrada · bairro/cidade</summary><p>É um resumo dos registros por bairro, cidade e UF; o sistema ainda não tem limites oficiais de regiões nem vínculo com órgãos.</p><div className="painel-insights-tabela"><table><thead><tr><th>Localidade</th><th>Operacionais / instalados</th><th>Indisponíveis</th><th>Imediatas</th><th>Vencidas</th><th>Próx. 7 dias</th></tr></thead><tbody>{indicadores.porLocalidade.map((localidade) => <tr key={`${localidade.cidade}-${localidade.uf}-${localidade.bairro}`}><td>{localidade.bairro}, {localidade.cidade}/{localidade.uf}</td><td>{localidade.operacionais} / {localidade.totalInstalado}</td><td>{localidade.indisponiveis}</td><td>{localidade.manutencoesImediatas}</td><td>{localidade.manutencoesVencidas}</td><td>{localidade.manutencoesProximas}</td></tr>)}</tbody></table></div></details> : null}
+            {indicadores && <details className="painel-insights"><summary>Projeção de manutenção · próximos 30 dias ({indicadores.projecaoManutencao.reduce((totalProgramado, item) => totalProgramado + item.quantidade, 0)} programada(s))</summary><p>Projeção determinística baseada nas datas de manutenção cadastradas entre {dataLocal(indicadores.inicioProjecao)} e {dataLocal(indicadores.fimProjecao)}. Não é previsão de falhas ou ocorrências.</p>{indicadores.projecaoManutencao.length ? <div className="painel-insights-tabela"><table><thead><tr><th>Data prevista</th><th>Localidade</th><th>Equipamentos</th></tr></thead><tbody>{indicadores.projecaoManutencao.map((item, indice) => <tr key={`${item.data}-${item.cidade}-${item.bairro}-${indice}`}><td>{dataLocal(item.data)}</td><td>{item.bairro}, {item.cidade}/{item.uf}</td><td>{item.quantidade}</td></tr>)}</tbody></table></div> : <p>Nenhuma manutenção agendada para o horizonte apresentado.</p>}</details>}
             <div className="mapa-conteudo">
               <MapaEquipamentos
                 equipamentos={equipamentosMapa}
@@ -668,6 +872,8 @@ function App() {
               <label>Marca<input maxLength={100} value={formulario.marca ?? ''} onChange={(e) => atualizarCampo('marca', e.target.value)} /></label>
               <label>Modelo<input maxLength={120} value={formulario.modelo ?? ''} onChange={(e) => atualizarCampo('modelo', e.target.value)} /></label>
             </div>
+            <label className="characteristics-field">Características específicas (JSON)<textarea rows={4} maxLength={18000} spellCheck={false} value={caracteristicasJson} onChange={(evento) => setCaracteristicasJson(evento.target.value)} placeholder={'{"visão noturna":"sim","resolução":"4 MP"}'} /></label>
+            <p className="form-hint">Use pares nome/valor em texto. Os atributos variam conforme o equipamento; os valores cadastrados aparecem no mapa.</p>
             <div className="form-section-title">LOCALIZAÇÃO</div>
             <div className="form-grid">
               <label>CEP<input required maxLength={20} value={formulario.cep} onChange={(e) => atualizarCampo('cep', e.target.value)} /></label>

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Threading.RateLimiting;
 using Fogo.Api.Identity;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -52,6 +53,12 @@ public static class ConfiguracaoAutenticacao
         builder.Services.AddSingleton(opcoesToken);
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IReadOnlyCollection<string>>(origensPermitidas);
+        var caminhoChaves = builder.Configuration["FOGO_DATA_PROTECTION_KEYS_PATH"];
+        var protecaoDados = builder.Services.AddDataProtection().SetApplicationName("Fogo.Api");
+        if (!string.IsNullOrWhiteSpace(caminhoChaves))
+        {
+            protecaoDados.PersistKeysToFileSystem(new DirectoryInfo(caminhoChaves));
+        }
         builder.Services.AddDbContext<FogoDbContext>(opcoes => opcoes.UseNpgsql(conexaoBanco));
         builder.Services.AddIdentity<UsuarioFogo, IdentityRole>(opcoes =>
             {
@@ -68,6 +75,8 @@ public static class ConfiguracaoAutenticacao
             })
             .AddEntityFrameworkStores<FogoDbContext>()
             .AddDefaultTokenProviders();
+        builder.Services.Configure<DataProtectionTokenProviderOptions>(opcoes =>
+            opcoes.TokenLifespan = TimeSpan.FromHours(2));
         var cookiesSeguros = opcoesToken.CookiesSeguros;
         builder.Services.ConfigureApplicationCookie(opcoes =>
         {
@@ -151,6 +160,15 @@ public static class ConfiguracaoAutenticacao
                 _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = 10,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                }));
+            opcoes.AddPolicy("auth-publica", contexto => RateLimitPartition.GetFixedWindowLimiter(
+                contexto.Connection.RemoteIpAddress?.ToString() ?? "origem-desconhecida",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0,
                     AutoReplenishment = true

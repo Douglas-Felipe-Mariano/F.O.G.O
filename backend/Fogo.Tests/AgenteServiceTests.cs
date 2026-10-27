@@ -158,14 +158,16 @@ public sealed class AgenteServiceTests
         IReadOnlyCollection<ContagemSituacaoAgente> contagens =
         [
             new(SituacaoAgente.Disponivel, 4),
-            new(SituacaoAgente.EmAtendimento, 2)
+            new(SituacaoAgente.EmAtendimento, 2),
+            new(SituacaoAgente.Indisponivel, 3)
         ];
         var repositorio = new RepositorioAgentesFalso { Contagens = contagens };
         var servico = new AgenteService(repositorio, TimeProvider.System);
 
         var indicadores = await servico.ConsultarIndicadoresAsync(CancellationToken.None);
 
-        Assert.Equal(6, indicadores.TotalCadastrado);
+        Assert.Equal(9, indicadores.TotalCadastrado);
+        Assert.Equal(6, indicadores.EmAtividadeDeclarada);
         Assert.Equal(contagens, indicadores.PorSituacao);
     }
 

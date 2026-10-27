@@ -23,6 +23,11 @@ public sealed class EquipamentoServiceTests
         Assert.Equal("SP", equipamento.Uf);
         Assert.Equal("Marca", equipamento.Marca);
         Assert.Equal("Referência", equipamento.Referencia);
+        var caracteristica = new Dictionary<string, string> { ["Visão noturna"] = "Sim" };
+        var resultadoComCaracteristicas = await servico.CriarAsync(
+            CriarRequisicao() with { Caracteristicas = caracteristica },
+            CancellationToken.None);
+        Assert.Equal("Sim", resultadoComCaracteristicas.Valor!.Caracteristicas["Visão noturna"]);
         Assert.Equal(OrigemRegistro.Manual, equipamento.OrigemDados);
         Assert.Equal(agora, equipamento.CriadoEm);
         Assert.Equal(agora, equipamento.AtualizadoEm);
@@ -108,6 +113,17 @@ public sealed class EquipamentoServiceTests
         Assert.True(resposta.ResultadoTruncado);
         Assert.Equal(2, resposta.Itens.Count);
         Assert.All(resposta.Itens, item => Assert.NotEqual(Guid.Empty, item.Id));
+        var primeiro = resposta.Itens.First();
+        Assert.Equal("01000-000", primeiro.Cep);
+        Assert.Equal("Centro", primeiro.Bairro);
+        Assert.Equal("Radar", primeiro.Tipo);
+        Assert.Equal("RAD-002", primeiro.NumeroSerie);
+        Assert.Equal("Fabricante", primeiro.Marca);
+        Assert.Equal("ZX", primeiro.Modelo);
+        Assert.Equal("50", primeiro.Caracteristicas["Limite"]);
+        Assert.True(primeiro.NecessitaManutencao);
+        Assert.Equal(TipoManutencao.Agendada, primeiro.TipoManutencao);
+        Assert.Equal(new DateOnly(2026, 11, 1), primeiro.ProximaManutencao);
     }
 
     [Theory]
@@ -189,15 +205,45 @@ public sealed class EquipamentoServiceTests
         var repositorio = new RepositorioMapaFalso
         {
             ContagensPorSituacao = contagens,
-            TotalManutencoes = 2
+            TotalManutencoes = 2,
+            TotalManutencoesImediatas = 1,
+            TotalManutencoesVencidas = 2,
+            TotalManutencoesProximas = 1,
+            ResumoLocalidades = [new("Centro", "São Paulo", "SP", 12, 12, 8, 4, 1, 2, 1)],
+            Projecao = [new("Centro", "São Paulo", "SP", new DateOnly(2026, 10, 25), 1)]
         };
-        var servico = new EquipamentoService(repositorio, TimeProvider.System);
+        var servico = new EquipamentoService(repositorio, new RelogioFalso(new DateTimeOffset(2026, 10, 24, 12, 30, 0, TimeSpan.Zero)));
 
         var indicadores = await servico.ConsultarIndicadoresAsync(CancellationToken.None);
 
         Assert.Equal(11, indicadores.TotalCadastrado);
         Assert.Equal(contagens, indicadores.PorSituacao);
         Assert.Equal(2, indicadores.NecessitamManutencao);
+        Assert.Equal(1, indicadores.ManutencoesImediatas);
+        Assert.Equal(11, indicadores.TotalInstalados);
+        Assert.Equal(8, indicadores.Operacionais);
+        Assert.Equal(3, indicadores.Indisponiveis);
+        Assert.Equal(72.7m, indicadores.PercentualDisponibilidade);
+        Assert.Equal(2, indicadores.ManutencoesVencidas);
+        Assert.Equal(1, indicadores.ManutencoesProximas);
+        Assert.Single(indicadores.PorLocalidade);
+        Assert.Single(indicadores.ProjecaoManutencao);
+        Assert.Equal(new DateOnly(2026, 10, 24), indicadores.InicioProjecao);
+        Assert.Equal(new DateOnly(2026, 11, 23), indicadores.FimProjecao);
+        Assert.Equal(new DateOnly(2026, 10, 24), repositorio.InicioAviso);
+        Assert.Equal(new DateOnly(2026, 10, 31), repositorio.FimAviso);
+
+    }
+
+    [Fact]
+    public async Task ConsultarIndicadores_SemEquipamentosInstalados_DisponibilidadeFicaIndefinida()
+    {
+        var servico = new EquipamentoService(new RepositorioMapaFalso(), TimeProvider.System);
+
+        var indicadores = await servico.ConsultarIndicadoresAsync(CancellationToken.None);
+
+        Assert.Equal(0, indicadores.TotalInstalados);
+        Assert.Null(indicadores.PercentualDisponibilidade);
     }
 
     private static EquipamentoRequisicao CriarRequisicao() => new(
@@ -254,6 +300,13 @@ public sealed class EquipamentoServiceTests
         public IReadOnlyCollection<Equipamento> ItensInventario { get; init; } = [];
         public IReadOnlyCollection<ContagemSituacao> ContagensPorSituacao { get; init; } = [];
         public int TotalManutencoes { get; init; }
+        public int TotalManutencoesImediatas { get; init; }
+        public int TotalManutencoesVencidas { get; init; }
+        public int TotalManutencoesProximas { get; init; }
+        public DateOnly? InicioAviso { get; private set; }
+        public DateOnly? FimAviso { get; private set; }
+        public IReadOnlyCollection<ResumoOperacionalLocalidade> ResumoLocalidades { get; init; } = [];
+        public IReadOnlyCollection<ProjecaoManutencaoLocalidade> Projecao { get; init; } = [];
         public Equipamento? EquipamentoAdicionado { get; private set; }
         public int ConsultasParaAtualizacao { get; private set; }
         public bool SalvouAlteracoes { get; private set; }
@@ -312,6 +365,29 @@ public sealed class EquipamentoServiceTests
         public Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento) =>
             Task.FromResult(TotalManutencoes);
 
+        public Task<int> ContarManutencoesImediatasAsync(CancellationToken cancelamento) =>
+            Task.FromResult(TotalManutencoesImediatas);
+
+        public Task<int> ContarManutencoesComDataAteAsync(DateOnly limite, CancellationToken cancelamento) =>
+            Task.FromResult(TotalManutencoesVencidas);
+
+        public Task<int> ContarManutencoesEntreAsync(DateOnly inicio, DateOnly fim, CancellationToken cancelamento)
+        {
+            InicioAviso = inicio;
+            FimAviso = fim;
+            return Task.FromResult(TotalManutencoesProximas);
+        }
+
+        public Task<IReadOnlyCollection<ResumoOperacionalLocalidade>> ConsultarResumoPorLocalidadeAsync(
+            DateOnly hoje,
+            DateOnly fimJanelaAviso,
+            CancellationToken cancelamento) => Task.FromResult(ResumoLocalidades);
+
+        public Task<IReadOnlyCollection<ProjecaoManutencaoLocalidade>> ConsultarProjecaoManutencaoAsync(
+            DateOnly hoje,
+            DateOnly fimHorizonte,
+            CancellationToken cancelamento) => Task.FromResult(Projecao);
+
         public Task AdicionarAsync(Equipamento equipamento, CancellationToken cancelamento)
         {
             EquipamentoAdicionado = equipamento;
@@ -328,6 +404,9 @@ public sealed class EquipamentoServiceTests
         {
             Tipo = "Radar",
             NumeroSerie = numeroSerie,
+            Marca = "Fabricante",
+            Modelo = "ZX",
+            Caracteristicas = new Dictionary<string, string> { ["Limite"] = "50" },
             Cep = "01000-000",
             Bairro = "Centro",
             Cidade = "São Paulo",
@@ -336,6 +415,9 @@ public sealed class EquipamentoServiceTests
             Latitude = latitude,
             Longitude = longitude,
             Situacao = SituacaoEquipamento.Operacional,
+            NecessitaManutencao = true,
+            TipoManutencao = TipoManutencao.Agendada,
+            ProximaManutencao = new DateOnly(2026, 11, 1),
             OrigemDados = OrigemRegistro.Manual
         };
     }

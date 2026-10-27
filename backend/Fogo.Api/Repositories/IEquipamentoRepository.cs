@@ -25,6 +25,17 @@ public interface IEquipamentoRepository
     Task<IReadOnlyCollection<Equipamento>> ListarComCoordenadasAsync(FiltrosMapaEquipamentos filtros, int deslocamento, int limite, CancellationToken cancelamento);
     Task<IReadOnlyCollection<ContagemSituacao>> ContarPorSituacaoAsync(CancellationToken cancelamento);
     Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento);
+    Task<int> ContarManutencoesImediatasAsync(CancellationToken cancelamento);
+    Task<int> ContarManutencoesComDataAteAsync(DateOnly limite, CancellationToken cancelamento);
+    Task<int> ContarManutencoesEntreAsync(DateOnly inicio, DateOnly fim, CancellationToken cancelamento);
+    Task<IReadOnlyCollection<ResumoOperacionalLocalidade>> ConsultarResumoPorLocalidadeAsync(
+        DateOnly hoje,
+        DateOnly fimJanelaAviso,
+        CancellationToken cancelamento);
+    Task<IReadOnlyCollection<ProjecaoManutencaoLocalidade>> ConsultarProjecaoManutencaoAsync(
+        DateOnly hoje,
+        DateOnly fimHorizonte,
+        CancellationToken cancelamento);
     Task AdicionarAsync(Equipamento equipamento, CancellationToken cancelamento);
     Task SalvarAlteracoesAsync(CancellationToken cancelamento);
 }

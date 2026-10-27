@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Fogo.Api.Inventario;
 
 namespace Fogo.Api.Identity;
@@ -126,6 +128,19 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
             entidade.Property(equipamento => equipamento.NumeroSerie).HasColumnName("numero_serie").HasMaxLength(100).IsRequired();
             entidade.Property(equipamento => equipamento.Marca).HasColumnName("marca").HasMaxLength(100);
             entidade.Property(equipamento => equipamento.Modelo).HasColumnName("modelo").HasMaxLength(120);
+            var conversorCaracteristicas = new ValueConverter<Dictionary<string, string>, string>(
+                valor => SerializarCaracteristicas(valor),
+                json => DesserializarCaracteristicas(json));
+            var comparadorCaracteristicas = new ValueComparer<Dictionary<string, string>>(
+                (esquerda, direita) => CaracteristicasIguais(esquerda, direita),
+                valor => HashCaracteristicas(valor),
+                valor => CopiarCaracteristicas(valor));
+            entidade.Property(equipamento => equipamento.Caracteristicas)
+                .HasColumnName("caracteristicas")
+                .HasColumnType("jsonb")
+                .HasDefaultValueSql("'{}'::jsonb")
+                .HasConversion(conversorCaracteristicas)
+                .Metadata.SetValueComparer(comparadorCaracteristicas);
             entidade.Property(equipamento => equipamento.Cep).HasColumnName("cep").HasMaxLength(20).IsRequired();
             entidade.Property(equipamento => equipamento.Bairro).HasColumnName("bairro").HasMaxLength(120).IsRequired();
             entidade.Property(equipamento => equipamento.Cidade).HasColumnName("cidade").HasMaxLength(120).IsRequired();
@@ -211,4 +226,24 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
             entidade.HasIndex(camera => new { camera.Latitude, camera.Longitude });
         });
     }
+
+    private static string SerializarCaracteristicas(Dictionary<string, string> valor) =>
+        System.Text.Json.JsonSerializer.Serialize(valor);
+
+    private static Dictionary<string, string> DesserializarCaracteristicas(string json) =>
+        System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
+
+    private static bool CaracteristicasIguais(
+        Dictionary<string, string>? esquerda,
+        Dictionary<string, string>? direita) =>
+        esquerda is not null
+        && direita is not null
+        && esquerda.Count == direita.Count
+        && esquerda.All(item => direita.TryGetValue(item.Key, out var valor) && valor == item.Value);
+
+    private static int HashCaracteristicas(Dictionary<string, string> valor) =>
+        valor.Aggregate(0, (hash, item) => HashCode.Combine(hash, item.Key, item.Value));
+
+    private static Dictionary<string, string> CopiarCaracteristicas(Dictionary<string, string> valor) =>
+        new(valor);
 }

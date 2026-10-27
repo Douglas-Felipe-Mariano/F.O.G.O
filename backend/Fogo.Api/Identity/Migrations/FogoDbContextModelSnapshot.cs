@@ -295,6 +295,13 @@ namespace Fogo.Api.Identity.Migrations
                         .HasColumnType("character varying(120)")
                         .HasColumnName("bairro");
 
+                    b.Property<string>("Caracteristicas")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("caracteristicas")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
                     b.Property<string>("Cep")
                         .IsRequired()
                         .HasMaxLength(20)

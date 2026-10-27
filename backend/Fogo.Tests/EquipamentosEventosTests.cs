@@ -208,6 +208,27 @@ public sealed class EquipamentosEventosTests : IClassFixture<ConfiguracaoFogoWeb
 
         public Task<int> ContarManutencoesNecessariasAsync(CancellationToken cancelamento) =>
             Task.FromResult(0);
+
+        public Task<int> ContarManutencoesImediatasAsync(CancellationToken cancelamento) =>
+            Task.FromResult(0);
+
+        public Task<int> ContarManutencoesComDataAteAsync(DateOnly limite, CancellationToken cancelamento) =>
+            Task.FromResult(0);
+
+        public Task<int> ContarManutencoesEntreAsync(DateOnly inicio, DateOnly fim, CancellationToken cancelamento) =>
+            Task.FromResult(0);
+
+        public Task<IReadOnlyCollection<ResumoOperacionalLocalidade>> ConsultarResumoPorLocalidadeAsync(
+            DateOnly hoje,
+            DateOnly fimJanelaAviso,
+            CancellationToken cancelamento) =>
+            Task.FromResult<IReadOnlyCollection<ResumoOperacionalLocalidade>>([]);
+
+        public Task<IReadOnlyCollection<ProjecaoManutencaoLocalidade>> ConsultarProjecaoManutencaoAsync(
+            DateOnly hoje,
+            DateOnly fimHorizonte,
+            CancellationToken cancelamento) =>
+            Task.FromResult<IReadOnlyCollection<ProjecaoManutencaoLocalidade>>([]);
     }
 }
 

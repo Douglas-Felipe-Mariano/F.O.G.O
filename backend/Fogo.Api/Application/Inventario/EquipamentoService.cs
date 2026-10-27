@@ -34,6 +34,10 @@ public sealed class EquipamentoService(
             equipamento.Id,
             equipamento.Tipo,
             equipamento.NumeroSerie,
+            equipamento.Marca,
+            equipamento.Modelo,
+            new Dictionary<string, string>(equipamento.Caracteristicas),
+            equipamento.Cep,
             equipamento.Bairro,
             equipamento.Cidade,
             equipamento.Uf,
@@ -42,6 +46,9 @@ public sealed class EquipamentoService(
             equipamento.Latitude!.Value,
             equipamento.Longitude!.Value,
             equipamento.Situacao,
+            equipamento.NecessitaManutencao,
+            equipamento.TipoManutencao,
+            equipamento.ProximaManutencao,
             equipamento.OrigemDados)).ToArray();
 
         return new MapaEquipamentosResposta(total, limite, (long)deslocamento + localizacoes.Length < total, localizacoes);
@@ -51,8 +58,41 @@ public sealed class EquipamentoService(
     {
         var porSituacao = await repositorio.ContarPorSituacaoAsync(cancelamento);
         var total = porSituacao.Sum(item => item.Quantidade);
+        var naoInstalados = porSituacao
+            .Where(item => item.Situacao == SituacaoEquipamento.AindaNaoInstalado)
+            .Sum(item => item.Quantidade);
+        var instalados = total - naoInstalados;
+        var operacionais = porSituacao
+            .Where(item => item.Situacao == SituacaoEquipamento.Operacional)
+            .Sum(item => item.Quantidade);
+        var indisponiveis = instalados - operacionais;
         var manutencoesNecessarias = await repositorio.ContarManutencoesNecessariasAsync(cancelamento);
-        return new IndicadoresEquipamentosResposta(total, porSituacao, manutencoesNecessarias);
+        var manutencoesImediatas = await repositorio.ContarManutencoesImediatasAsync(cancelamento);
+        var hoje = DateOnly.FromDateTime(relogio.GetUtcNow().UtcDateTime);
+        var fimJanelaAviso = hoje.AddDays(7);
+        var manutencoesVencidas = await repositorio.ContarManutencoesComDataAteAsync(hoje, cancelamento);
+        var manutencoesProximas = await repositorio.ContarManutencoesEntreAsync(hoje, fimJanelaAviso, cancelamento);
+        var resumoPorLocalidade = await repositorio.ConsultarResumoPorLocalidadeAsync(hoje, fimJanelaAviso, cancelamento);
+        var horizonteProjecao = hoje.AddDays(30);
+        var projecaoManutencao = await repositorio.ConsultarProjecaoManutencaoAsync(hoje, horizonteProjecao, cancelamento);
+        decimal? percentualDisponibilidade = instalados == 0
+            ? null
+            : decimal.Round(operacionais * 100m / instalados, 1);
+        return new IndicadoresEquipamentosResposta(
+            total,
+            porSituacao,
+            manutencoesNecessarias,
+            manutencoesImediatas,
+            instalados,
+            operacionais,
+            indisponiveis,
+            percentualDisponibilidade,
+            manutencoesVencidas,
+            manutencoesProximas,
+            resumoPorLocalidade,
+            projecaoManutencao,
+            hoje,
+            horizonteProjecao);
     }
 
     public async Task<ResultadoOperacao<EquipamentoResposta>> CriarAsync(
@@ -118,6 +158,9 @@ public sealed class EquipamentoService(
         equipamento.NumeroSerie = requisicao.NumeroSerie.Trim();
         equipamento.Marca = LimparOpcional(requisicao.Marca);
         equipamento.Modelo = LimparOpcional(requisicao.Modelo);
+        equipamento.Caracteristicas = requisicao.Caracteristicas is null
+            ? []
+            : new Dictionary<string, string>(requisicao.Caracteristicas);
         equipamento.Cep = requisicao.Cep.Trim();
         equipamento.Bairro = requisicao.Bairro.Trim();
         equipamento.Cidade = requisicao.Cidade.Trim();
@@ -140,7 +183,18 @@ public sealed class EquipamentoService(
 public sealed record IndicadoresEquipamentosResposta(
     int TotalCadastrado,
     IReadOnlyCollection<ContagemSituacao> PorSituacao,
-    int NecessitamManutencao);
+    int NecessitamManutencao,
+    int ManutencoesImediatas,
+    int TotalInstalados,
+    int Operacionais,
+    int Indisponiveis,
+    decimal? PercentualDisponibilidade,
+    int ManutencoesVencidas,
+    int ManutencoesProximas,
+    IReadOnlyCollection<ResumoOperacionalLocalidade> PorLocalidade,
+    IReadOnlyCollection<ProjecaoManutencaoLocalidade> ProjecaoManutencao,
+    DateOnly InicioProjecao,
+    DateOnly FimProjecao);
 
 public sealed class ResultadoOperacao<T>
 {

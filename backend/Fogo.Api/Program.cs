@@ -58,6 +58,7 @@ builder.Services.AddControllers().AddJsonOptions(opcoes =>
 });
 builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IEmailSenderFogo, SmtpEmailSender>();
 builder.Services.AddHttpClient<RadarOpenStreetMapService>(cliente =>
 {
     cliente.Timeout = TimeSpan.FromSeconds(15);

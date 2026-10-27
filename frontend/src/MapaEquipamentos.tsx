@@ -10,6 +10,10 @@ export type LocalizacaoEquipamento = {
   id: string;
   tipo: string;
   numeroSerie: string;
+  marca?: string | null;
+  modelo?: string | null;
+  caracteristicas?: Record<string, string>;
+  cep?: string;
   bairro: string;
   cidade: string;
   uf: string;
@@ -18,6 +22,9 @@ export type LocalizacaoEquipamento = {
   latitude: number;
   longitude: number;
   situacao: string;
+  necessitaManutencao?: boolean;
+  tipoManutencao?: 'imediata' | 'agendada' | 'periodica' | null;
+  proximaManutencao?: string | null;
   origemDados?: 'manual' | 'importado' | 'simulado';
   fonte?: string;
   urlFonte?: string;
@@ -70,7 +77,7 @@ const corSituacao: Record<string, string> = {
 const iconeEquipamentoSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5 12 3l4 2.5v3l3 1.7v8.3H5v-8.3l3-1.7v-3Z"/><path d="M9 8h6M9 13h6M9 16h2m3 0h1"/></svg>';
 const iconeAgenteSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.4-4 2.6-6 6.5-6s6.1 2 6.5 6H5.5Z"/></svg>';
 const iconeRadarSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V9m-4 11h8M9 9a3 3 0 0 1 6 0M6 7a6 6 0 0 1 12 0M3.5 5a8.5 8.5 0 0 1 17 0"/><circle cx="12" cy="7" r="1"/></svg>';
-const iconeCameraSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10a2 2 0 0 1 2 2v1l4-2v8l-4-2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="9" cy="12" r="2.5"/></svg>';
+const iconeCameraSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6.5" width="13" height="11" rx="2"/><path d="m15.5 10 6-3v10l-6-3z"/></svg>';
 
 function criarIconeEquipamento(situacao: string, tipo: string, origemExterna: boolean) {
   const classeSituacao = corSituacao[situacao] ? ` situacao-${situacao}` : '';
@@ -85,19 +92,26 @@ function criarIconeEquipamento(situacao: string, tipo: string, origemExterna: bo
   });
 }
 
-const iconeAgente = divIcon({
-  className: 'icone-leaflet-container',
-  html: `<span class="marcador-mapa marcador-agente">${iconeAgenteSvg}</span>`,
-  iconSize: [36, 44],
-  iconAnchor: [18, 40],
-  popupAnchor: [0, -38],
-});
+function criarIconeAgente(situacao: string) {
+  const classeSituacao = situacao === 'disponivel'
+    ? ' agente-disponivel'
+    : situacao === 'emAtendimento'
+      ? ' agente-em-atendimento'
+      : ' agente-indisponivel';
+  return divIcon({
+    className: 'icone-leaflet-container',
+    html: `<span class="marcador-mapa marcador-agente${classeSituacao}">${iconeAgenteSvg}</span>`,
+    iconSize: [36, 44],
+    iconAnchor: [18, 40],
+    popupAnchor: [0, -38],
+  });
+}
 const iconeCamera = divIcon({
   className: 'icone-leaflet-container',
   html: `<span class="marcador-mapa marcador-camera">${iconeCameraSvg}</span>`,
-  iconSize: [36, 44],
-  iconAnchor: [18, 40],
-  popupAnchor: [0, -38],
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -22],
 });
 const iconeUsuario = divIcon({
   className: 'icone-leaflet-container',
@@ -157,9 +171,14 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
               <div className="popup-equipamento">
                 <strong>{equipamento.tipo}</strong>
                 <span>Série {equipamento.numeroSerie}</span>
+                {!equipamento.urlFonte && <span>{[equipamento.marca, equipamento.modelo].filter(Boolean).join(' · ') || 'Marca/modelo não informados'}</span>}
                 <span>{equipamento.urlFonte ? 'Posição mapeada · situação não verificada' : rotuloSituacao[equipamento.situacao] ?? equipamento.situacao}</span>
+                {!equipamento.urlFonte && equipamento.caracteristicas && Object.keys(equipamento.caracteristicas).length > 0 && <span>Características: {Object.entries(equipamento.caracteristicas).map(([nome, valor]) => `${nome}: ${valor}`).join(' · ')}</span>}
                 <span>{equipamento.rua}{equipamento.referencia ? ` · ${equipamento.referencia}` : ''}</span>
                 <span>{equipamento.bairro}, {equipamento.cidade}/{equipamento.uf}</span>
+                {!equipamento.urlFonte && equipamento.cep && <span>CEP {equipamento.cep}</span>}
+                {!equipamento.urlFonte && equipamento.necessitaManutencao && <span>Manutenção: {equipamento.tipoManutencao === 'imediata' ? 'Imediata' : equipamento.tipoManutencao === 'agendada' ? 'Agendada' : equipamento.tipoManutencao === 'periodica' ? 'Periódica' : 'Indicada'}{equipamento.proximaManutencao ? ` · próxima em ${new Intl.DateTimeFormat('pt-BR').format(new Date(`${equipamento.proximaManutencao}T00:00:00`))}` : ''}</span>}
+                {!equipamento.urlFonte && <span>Coordenadas: {equipamento.latitude}, {equipamento.longitude}</span>}
                 {equipamento.origemDados === 'simulado' && <strong className="popup-aviso">DADO SIMULADO · não confirma radar ou equipamento real.</strong>}
                 {equipamento.urlFonte && <strong className="popup-fonte">Fonte: {equipamento.fonte ?? 'OpenStreetMap'}{equipamento.velocidadeMaxima ? ` · Máx. ${equipamento.velocidadeMaxima}` : ''} · situação não verificada.</strong>}
                 {equipamento.urlFonte && <a href={equipamento.urlFonte} target="_blank" rel="noreferrer">Ver objeto no OpenStreetMap ↗</a>}
@@ -172,7 +191,7 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
           <Marker
             key={`agente-${agente.id}`}
             position={[agente.latitude, agente.longitude]}
-            icon={iconeAgente}
+            icon={criarIconeAgente(agente.situacao)}
           >
             <Popup>
               <div className="popup-equipamento">

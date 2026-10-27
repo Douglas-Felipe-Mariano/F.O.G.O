@@ -33,6 +33,7 @@ public sealed class Equipamento
     public required string NumeroSerie { get; set; }
     public string? Marca { get; set; }
     public string? Modelo { get; set; }
+    public Dictionary<string, string> Caracteristicas { get; set; } = [];
     public required string Cep { get; set; }
     public required string Bairro { get; set; }
     public required string Cidade { get; set; }
@@ -67,7 +68,8 @@ public sealed record EquipamentoRequisicao(
     bool NecessitaManutencao,
     TipoManutencao? TipoManutencao,
     DateOnly? ProximaManutencao,
-    OrigemRegistro OrigemDados);
+    OrigemRegistro OrigemDados,
+    Dictionary<string, string>? Caracteristicas = null);
 
 public sealed record EquipamentoResposta(
     Guid Id,
@@ -75,6 +77,7 @@ public sealed record EquipamentoResposta(
     string NumeroSerie,
     string? Marca,
     string? Modelo,
+    Dictionary<string, string> Caracteristicas,
     string Cep,
     string Bairro,
     string Cidade,
@@ -97,6 +100,7 @@ public sealed record EquipamentoResposta(
         equipamento.NumeroSerie,
         equipamento.Marca,
         equipamento.Modelo,
+        new Dictionary<string, string>(equipamento.Caracteristicas),
         equipamento.Cep,
         equipamento.Bairro,
         equipamento.Cidade,
@@ -122,10 +126,33 @@ public sealed record PaginaEquipamentosResposta(
 
 public sealed record ContagemSituacao(SituacaoEquipamento Situacao, int Quantidade);
 
+public sealed record ResumoOperacionalLocalidade(
+    string Bairro,
+    string Cidade,
+    string Uf,
+    int TotalCadastrado,
+    int TotalInstalado,
+    int Operacionais,
+    int Indisponiveis,
+    int ManutencoesImediatas,
+    int ManutencoesVencidas,
+    int ManutencoesProximas);
+
+public sealed record ProjecaoManutencaoLocalidade(
+    string Bairro,
+    string Cidade,
+    string Uf,
+    DateOnly Data,
+    int Quantidade);
+
 public sealed record LocalizacaoEquipamentoResposta(
     Guid Id,
     string Tipo,
     string NumeroSerie,
+    string? Marca,
+    string? Modelo,
+    Dictionary<string, string> Caracteristicas,
+    string Cep,
     string Bairro,
     string Cidade,
     string Uf,
@@ -134,6 +161,9 @@ public sealed record LocalizacaoEquipamentoResposta(
     decimal Latitude,
     decimal Longitude,
     SituacaoEquipamento Situacao,
+    bool NecessitaManutencao,
+    TipoManutencao? TipoManutencao,
+    DateOnly? ProximaManutencao,
     OrigemRegistro OrigemDados = OrigemRegistro.Manual);
 
 public sealed record MapaEquipamentosResposta(

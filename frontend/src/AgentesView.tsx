@@ -17,7 +17,7 @@ type Agente = {
 };
 type AgenteRequisicao = Omit<Agente, 'id' | 'criadoEm' | 'atualizadoEm'>;
 type PaginaAgentes = { pagina: number; tamanhoPagina: number; totalRegistros: number; itens: Agente[] };
-type IndicadoresAgentes = { totalCadastrado: number; porSituacao: { situacao: SituacaoAgente; quantidade: number }[] };
+type IndicadoresAgentes = { totalCadastrado: number; emAtividadeDeclarada: number; porSituacao: { situacao: SituacaoAgente; quantidade: number }[] };
 
 const situacoes: { valor: SituacaoAgente; rotulo: string }[] = [
   { valor: 'disponivel', rotulo: 'Disponível' },
@@ -170,6 +170,7 @@ export default function AgentesView({ token, revisao, agenteIdParaEditar, onAgen
 
       <div className="agentes-indicadores">
         <article><span>CADASTRADOS</span><strong>{indicadores?.totalCadastrado ?? '—'}</strong></article>
+        <article><span>DISPONÍVEIS/EM ATENDIMENTO · INFORMADO</span><strong>{indicadores?.emAtividadeDeclarada ?? '—'}</strong></article>
         {situacoes.map((item) => <article key={item.valor}><span>{item.rotulo.toUpperCase()}</span><strong>{quantidade(item.valor)}</strong></article>)}
       </div>
 

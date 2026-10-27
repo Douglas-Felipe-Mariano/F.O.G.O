@@ -1,4 +1,5 @@
 using System.Data;
+using System.ComponentModel.DataAnnotations;
 using Fogo.Api.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -19,6 +20,26 @@ public static class EndpointsAutenticacao
             .AllowAnonymous()
             .RequireRateLimiting("login")
             .WithSummary("Autentica um usuário e cria uma sessão.");
+        grupo.MapPost("/cadastro", CadastrarAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth-publica")
+            .WithSummary("Cria uma conta e envia um link para confirmação do e-mail.");
+        grupo.MapPost("/confirmar-email", ConfirmarEmailAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth-publica")
+            .WithSummary("Confirma o endereço de e-mail usando um token temporário.");
+        grupo.MapPost("/reenviar-confirmacao", ReenviarConfirmacaoAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth-publica")
+            .WithSummary("Solicita o reenvio da confirmação sem revelar se a conta existe.");
+        grupo.MapPost("/esqueci-senha", EsqueciSenhaAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth-publica")
+            .WithSummary("Solicita um link de recuperação sem revelar se a conta existe.");
+        grupo.MapPost("/redefinir-senha", RedefinirSenhaAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth-publica")
+            .WithSummary("Redefine a senha com um token temporário enviado por e-mail.");
         grupo.MapPost("/atualizar", AtualizarAsync)
             .AllowAnonymous()
             .WithSummary("Rotaciona o refresh token da sessão.");
@@ -34,6 +55,198 @@ public static class EndpointsAutenticacao
         contexto.Response.Headers.CacheControl = "no-store";
         ProtecaoRequisicao.DefinirCookieCsrf(contexto, opcoes.CookiesSeguros);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> CadastrarAsync(
+        CadastroRequisicao requisicao,
+        HttpContext contexto,
+        UserManager<UsuarioFogo> gerenciadorUsuarios,
+        IEmailSenderFogo remetenteEmail,
+        IConfiguration configuracao,
+        IHostEnvironment ambiente,
+        ILogger<Program> logger,
+        IReadOnlyCollection<string> origensPermitidas,
+        CancellationToken cancelamento)
+    {
+        if (!RequisicaoPublicaValida(contexto, origensPermitidas)) return Results.Forbid();
+        if (!EmailValido(requisicao.Email))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = ["Informe um endereço de e-mail válido."] });
+        }
+
+        if (string.IsNullOrEmpty(requisicao.Senha))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["senha"] = ["A senha é obrigatória."] });
+        }
+
+        var email = requisicao.Email.Trim();
+        if (await gerenciadorUsuarios.FindByEmailAsync(email) is null)
+        {
+            var usuario = new UsuarioFogo { UserName = email, Email = email };
+            var criacao = await gerenciadorUsuarios.CreateAsync(usuario, requisicao.Senha);
+            if (criacao.Succeeded)
+            {
+                var token = await gerenciadorUsuarios.GenerateEmailConfirmationTokenAsync(usuario);
+                await TentarEnviarLinkAsync(remetenteEmail, logger, configuracao, ambiente, email, token, "confirmar", cancelamento);
+            }
+            else if (criacao.Errors.Any(erro => erro.Code is "PasswordTooShort" or "PasswordRequiresDigit" or "PasswordRequiresLower" or "PasswordRequiresUpper" or "PasswordRequiresNonAlphanumeric"))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["senha"] = criacao.Errors.Select(erro => erro.Description).ToArray() });
+            }
+        }
+
+        return Results.Accepted(value: new { mensagem = "Se o cadastro puder ser concluído, enviaremos as instruções para o endereço informado." });
+    }
+
+    private static async Task<IResult> ReenviarConfirmacaoAsync(
+        EmailRequisicao requisicao,
+        HttpContext contexto,
+        UserManager<UsuarioFogo> gerenciadorUsuarios,
+        IEmailSenderFogo remetenteEmail,
+        IConfiguration configuracao,
+        IHostEnvironment ambiente,
+        ILogger<Program> logger,
+        IReadOnlyCollection<string> origensPermitidas,
+        CancellationToken cancelamento)
+    {
+        if (!RequisicaoPublicaValida(contexto, origensPermitidas)) return Results.Forbid();
+        if (EmailValido(requisicao.Email))
+        {
+            var usuario = await gerenciadorUsuarios.FindByEmailAsync(requisicao.Email.Trim());
+            if (usuario is { EmailConfirmed: false })
+            {
+                var token = await gerenciadorUsuarios.GenerateEmailConfirmationTokenAsync(usuario);
+                await TentarEnviarLinkAsync(remetenteEmail, logger, configuracao, ambiente, usuario.Email!, token, "confirmar", cancelamento);
+            }
+        }
+
+        return Results.Accepted(value: new { mensagem = "Se houver uma conta pendente para o endereço informado, enviaremos novas instruções." });
+    }
+
+    private static async Task<IResult> ConfirmarEmailAsync(
+        TokenEmailRequisicao requisicao,
+        HttpContext contexto,
+        UserManager<UsuarioFogo> gerenciadorUsuarios,
+        IReadOnlyCollection<string> origensPermitidas)
+    {
+        if (!RequisicaoPublicaValida(contexto, origensPermitidas)) return Results.Forbid();
+        var usuario = EmailValido(requisicao.Email)
+            ? await gerenciadorUsuarios.FindByEmailAsync(requisicao.Email.Trim())
+            : null;
+        if (usuario is null || usuario.EmailConfirmed || string.IsNullOrWhiteSpace(requisicao.Token))
+        {
+            return Results.BadRequest(new { mensagem = "O link de confirmação é inválido ou expirou." });
+        }
+
+        var resultado = await gerenciadorUsuarios.ConfirmEmailAsync(usuario, requisicao.Token);
+        return resultado.Succeeded
+            ? Results.NoContent()
+            : Results.BadRequest(new { mensagem = "O link de confirmação é inválido ou expirou. Solicite um novo." });
+    }
+
+    private static async Task<IResult> EsqueciSenhaAsync(
+        EmailRequisicao requisicao,
+        HttpContext contexto,
+        UserManager<UsuarioFogo> gerenciadorUsuarios,
+        IEmailSenderFogo remetenteEmail,
+        IConfiguration configuracao,
+        IHostEnvironment ambiente,
+        ILogger<Program> logger,
+        IReadOnlyCollection<string> origensPermitidas,
+        CancellationToken cancelamento)
+    {
+        if (!RequisicaoPublicaValida(contexto, origensPermitidas)) return Results.Forbid();
+        if (EmailValido(requisicao.Email))
+        {
+            var usuario = await gerenciadorUsuarios.FindByEmailAsync(requisicao.Email.Trim());
+            if (usuario is not null)
+            {
+                var token = await gerenciadorUsuarios.GeneratePasswordResetTokenAsync(usuario);
+                await TentarEnviarLinkAsync(remetenteEmail, logger, configuracao, ambiente, usuario.Email!, token, "redefinir", cancelamento);
+            }
+        }
+
+        return Results.Accepted(value: new { mensagem = "Se houver uma conta associada ao endereço, enviaremos as instruções de recuperação." });
+    }
+
+    private static async Task<IResult> RedefinirSenhaAsync(
+        RedefinirSenhaRequisicao requisicao,
+        HttpContext contexto,
+        UserManager<UsuarioFogo> gerenciadorUsuarios,
+        FogoDbContext banco,
+        TimeProvider relogio,
+        IReadOnlyCollection<string> origensPermitidas,
+        CancellationToken cancelamento)
+    {
+        if (!RequisicaoPublicaValida(contexto, origensPermitidas)) return Results.Forbid();
+        if (string.IsNullOrWhiteSpace(requisicao.Token) || string.IsNullOrEmpty(requisicao.NovaSenha))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["token"] = ["Informe o token e a nova senha."] });
+        }
+
+        var usuario = EmailValido(requisicao.Email)
+            ? await gerenciadorUsuarios.FindByEmailAsync(requisicao.Email.Trim())
+            : null;
+        if (usuario is null)
+        {
+            return Results.BadRequest(new { mensagem = "O link de recuperação é inválido ou expirou." });
+        }
+
+        var resultado = await gerenciadorUsuarios.ResetPasswordAsync(usuario, requisicao.Token, requisicao.NovaSenha);
+        if (!resultado.Succeeded)
+        {
+            if (resultado.Errors.Any(erro => erro.Code.StartsWith("Password", StringComparison.Ordinal)))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["novaSenha"] = resultado.Errors.Select(erro => erro.Description).ToArray() });
+            }
+
+            return Results.BadRequest(new { mensagem = "O link de recuperação é inválido ou expirou." });
+        }
+
+        var agora = relogio.GetUtcNow();
+        await banco.SessoesAtualizacao
+            .Where(sessao => sessao.UsuarioId == usuario.Id && sessao.RevogadaEm == null)
+            .ExecuteUpdateAsync(atualizacao => atualizacao.SetProperty(sessao => sessao.RevogadaEm, agora), cancelamento);
+        return Results.NoContent();
+    }
+
+    private static bool RequisicaoPublicaValida(HttpContext contexto, IReadOnlyCollection<string> origensPermitidas)
+    {
+        contexto.Response.Headers.CacheControl = "no-store";
+        return ProtecaoRequisicao.OrigemPermitida(contexto, origensPermitidas)
+            && ProtecaoRequisicao.TokenCsrfValido(contexto);
+    }
+
+    private static bool EmailValido(string? email) =>
+        !string.IsNullOrWhiteSpace(email)
+        && email.Length <= 256
+        && new EmailAddressAttribute().IsValid(email.Trim());
+
+    private static async Task TentarEnviarLinkAsync(
+        IEmailSenderFogo remetenteEmail,
+        ILogger logger,
+        IConfiguration configuracao,
+        IHostEnvironment ambiente,
+        string email,
+        string token,
+        string acao,
+        CancellationToken cancelamento)
+    {
+        try
+        {
+            var link = LinksEmailAutenticacao.Criar(configuracao, ambiente, acao, email, token);
+            var linkHtml = LinksEmailAutenticacao.HtmlSeguro(link);
+            var texto = acao == "confirmar"
+                ? $"Confirme seu e-mail acessando: {link}"
+                : $"Redefina sua senha acessando: {link}";
+            var html = $"<p>{(acao == "confirmar" ? "Confirme seu endereço de e-mail" : "Solicitação para redefinir sua senha")} no F.O.G.O.:</p><p><a href=\"{linkHtml}\">{(acao == "confirmar" ? "Confirmar e-mail" : "Redefinir senha")}</a></p><p>Se você não solicitou esta ação, ignore esta mensagem.</p>";
+            var assunto = acao == "confirmar" ? "Confirme seu e-mail — F.O.G.O." : "Recuperação de senha — F.O.G.O.";
+            await remetenteEmail.EnviarAsync(email, assunto, texto, html, cancelamento);
+        }
+        catch (Exception excecao) when (excecao is not OperationCanceledException)
+        {
+            logger.LogError("Não foi possível enviar e-mail de autenticação. Tipo da falha: {TipoFalha}", excecao.GetType().Name);
+        }
     }
 
     private static async Task<IResult> EntrarAsync(
@@ -220,4 +433,8 @@ public static class EndpointsAutenticacao
 }
 
 public sealed record LoginRequisicao(string Identificador, string Senha);
+public sealed record CadastroRequisicao(string Email, string Senha);
+public sealed record EmailRequisicao(string Email);
+public sealed record TokenEmailRequisicao(string Email, string Token);
+public sealed record RedefinirSenhaRequisicao(string Email, string Token, string NovaSenha);
 public sealed record RespostaTokenAcesso(string TokenAcesso, DateTimeOffset ExpiraEm);
