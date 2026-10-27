@@ -7,7 +7,7 @@
 O F.O.G.O. reúne, em uma única interface autenticada:
 
 - inventário de equipamentos, situação, manutenção e atributos flexíveis;
-- cadastro e consulta de agentes, com posições cadastradas manualmente;
+- cadastro e consulta de agentes, com posições cadastradas manualmente; agentes inativos permanecem no cadastro e não são exibidos no mapa;
 - mapa interativo com equipamentos, agentes, câmeras públicas, trânsito e acidentes em aberto;
 - registro de acidentes com seleção do local diretamente no mapa, grau, impacto no trânsito e informação sobre feridos;
 - indicadores, alertas e painel de inteligência preditiva PROMETHEUS;

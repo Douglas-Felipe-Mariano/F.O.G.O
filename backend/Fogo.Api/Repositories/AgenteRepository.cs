@@ -27,11 +27,17 @@ public sealed class AgenteRepository(FogoDbContext banco) : IAgenteRepository
         banco.Agentes.SingleOrDefaultAsync(agente => agente.Id == id, cancelamento);
 
     public Task<int> ContarComCoordenadasAsync(CancellationToken cancelamento) =>
-        banco.Agentes.AsNoTracking().CountAsync(agente => agente.Latitude != null && agente.Longitude != null, cancelamento);
+        banco.Agentes.AsNoTracking().CountAsync(
+            agente => agente.Latitude != null
+                && agente.Longitude != null
+                && agente.Situacao != SituacaoAgente.Inativo,
+            cancelamento);
 
     public async Task<IReadOnlyCollection<Agente>> ListarComCoordenadasAsync(int deslocamento, int limite, CancellationToken cancelamento) =>
         await banco.Agentes.AsNoTracking()
-            .Where(agente => agente.Latitude != null && agente.Longitude != null)
+            .Where(agente => agente.Latitude != null
+                && agente.Longitude != null
+                && agente.Situacao != SituacaoAgente.Inativo)
             .OrderBy(agente => agente.Id)
             .Skip(deslocamento)
             .Take(limite)

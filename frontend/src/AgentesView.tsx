@@ -1,7 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import './Agentes.css';
+import './AgentesAcoes.css';
 
-type SituacaoAgente = 'disponivel' | 'emAtendimento' | 'indisponivel';
+type SituacaoAgente = 'disponivel' | 'emAtendimento' | 'indisponivel' | 'inativo';
 type OrigemRegistro = 'manual' | 'importado' | 'simulado';
 type Agente = {
   id: string;
@@ -23,6 +24,7 @@ const situacoes: { valor: SituacaoAgente; rotulo: string }[] = [
   { valor: 'disponivel', rotulo: 'Disponível' },
   { valor: 'emAtendimento', rotulo: 'Em atendimento' },
   { valor: 'indisponivel', rotulo: 'Indisponível' },
+  { valor: 'inativo', rotulo: 'Inativo' },
 ];
 const origens: { valor: OrigemRegistro; rotulo: string }[] = [
   { valor: 'manual', rotulo: 'Manual' },
@@ -44,6 +46,7 @@ export default function AgentesView({ token, revisao, agenteIdParaEditar, onAgen
   const [dados, setDados] = useState<PaginaAgentes>({ pagina: 1, tamanhoPagina: 25, totalRegistros: 0, itens: [] });
   const [indicadores, setIndicadores] = useState<IndicadoresAgentes | null>(null);
   const [carregando, setCarregando] = useState(false);
+  const [inativandoId, setInativandoId] = useState<string | null>(null);
   const [erro, setErro] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [modalAberto, setModalAberto] = useState(false);
@@ -152,6 +155,23 @@ export default function AgentesView({ token, revisao, agenteIdParaEditar, onAgen
     }
   }
 
+  async function inativar(agente: Agente) {
+    if (!window.confirm(`Inativar ${agente.nome}? O cadastro será mantido, mas o agente deixará de aparecer no mapa.`)) return;
+
+    setErro('');
+    setMensagem('');
+    setInativandoId(agente.id);
+    try {
+      await chamarApi(`/api/agentes/${agente.id}/inativar`, { method: 'POST' });
+      setMensagem(`${agente.nome} foi inativado. O cadastro permanece na equipe.`);
+      await carregar();
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : 'Não foi possível inativar o agente.');
+    } finally {
+      setInativandoId(null);
+    }
+  }
+
   const quantidade = (valor: SituacaoAgente) => indicadores?.porSituacao.find((item) => item.situacao === valor)?.quantidade ?? 0;
 
   return (
@@ -183,7 +203,7 @@ export default function AgentesView({ token, revisao, agenteIdParaEditar, onAgen
           <button className="button button-quiet" type="button" onClick={() => void carregar()} disabled={carregando}>↻ Atualizar</button>
         </form>
         {carregando ? <div className="empty-state">Atualizando o quadro…</div> : dados.itens.length === 0 ? (
-          <div className="empty-state"><span className="empty-icon">⌁</span><h3>{dados.totalRegistros ? 'Nenhum agente nesta página' : 'Nenhum agente cadastrado'}</h3><p>{dados.totalRegistros ? 'Altere os filtros ou navegue para outra página.' : 'Cadastre a equipe para acompanhar a situação operacional informada. Registros de exemplo são identificados como simulados.'}</p>{dados.totalRegistros === 0 && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro agente</button>}</div>
+          <div className="empty-state"><span className="empty-icon">⌁</span><h3>{dados.totalRegistros ? 'Nenhum agente nesta página' : 'Nenhum agente cadastrado'}</h3><p>{dados.totalRegistros ? 'Altere os filtros ou navegue para outra página.' : 'Cadastre a equipe para acompanhar os registros operacionais.'}</p>{dados.totalRegistros === 0 && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro agente</button>}</div>
         ) : (
           <div className="table-wrap"><table><thead><tr><th>Agente</th><th>Base operacional</th><th>Situação informada</th><th>Origem</th><th><span className="sr-only">Ação</span></th></tr></thead><tbody>
             {dados.itens.map((agente) => <tr key={agente.id}>
@@ -191,7 +211,7 @@ export default function AgentesView({ token, revisao, agenteIdParaEditar, onAgen
               <td>{agente.baseOperacional}<span className="cell-secondary">{agente.latitude !== null && agente.longitude !== null ? `${agente.latitude}, ${agente.longitude}` : 'Localização não informada'}</span></td>
               <td><span className={`status-pill status-${agente.situacao.toLowerCase()}`}>{rotuloSituacao.get(agente.situacao) ?? agente.situacao}</span></td>
               <td><span className={`origin-tag origin-${agente.origemDados}`}>{origens.find((origem) => origem.valor === agente.origemDados)?.rotulo}</span></td>
-              <td><button className="icon-button" aria-label={`Editar cadastro de ${agente.nome}`} onClick={() => abrirEdicao(agente)}>↗</button></td>
+              <td><div className="agente-row-actions"><button className="icon-button" aria-label={`Editar cadastro de ${agente.nome}`} title="Editar cadastro" onClick={() => abrirEdicao(agente)}>↗</button>{agente.situacao !== 'inativo' && <button className="button button-quiet agente-inativar" type="button" disabled={inativandoId === agente.id} onClick={() => void inativar(agente)}>{inativandoId === agente.id ? 'Inativando…' : 'Inativar'}</button>}</div></td>
             </tr>)}
           </tbody></table></div>
         )}
@@ -212,7 +232,7 @@ export default function AgentesView({ token, revisao, agenteIdParaEditar, onAgen
             <label>Situação operacional<select value={formulario.situacao} onChange={(evento) => setFormulario({ ...formulario, situacao: evento.target.value as SituacaoAgente })}>{situacoes.map((item) => <option key={item.valor} value={item.valor}>{item.rotulo}</option>)}</select></label>
             <label>Origem do registro<select value={formulario.origemDados} onChange={(evento) => setFormulario({ ...formulario, origemDados: evento.target.value as OrigemRegistro })}>{origens.map((item) => <option key={item.valor} value={item.valor}>{item.rotulo}</option>)}</select></label>
             {erro && <p className="alert error" role="alert">{erro}</p>}
-            <p className="form-hint">A situação é informada manualmente; o sistema não rastreia atividade nem localização em tempo real.</p>
+            <p className="form-hint">Mantenha a situação e os dados de localização atualizados conforme os registros da equipe.</p>
             <div className="modal-actions"><button className="button button-quiet" type="button" onClick={() => setModalAberto(false)}>Cancelar</button><button className="button button-primary" type="submit">{editando ? 'Salvar alterações' : 'Cadastrar agente'}</button></div>
           </form>
         </section>

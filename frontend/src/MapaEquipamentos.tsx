@@ -244,7 +244,7 @@ function CamadaCalor({ pontosCalor, ativa }: { pontosCalor: PontoCalor[]; ativa:
         radius={8 + intensidade * 0.2}
         pathOptions={{ color: cor, weight: 1, fillColor: cor, fillOpacity: 0.18 + intensidade * 0.004 }}
       >
-        <Popup><div className="popup-equipamento"><strong>Intensidade preditiva: {intensidade}/100</strong><span>Área de atenção calculada por trânsito, manutenção/falhas e ocorrências recentes.</span><span>Índice heurístico para apoio à decisão; não representa probabilidade validada.</span></div></Popup>
+        <Popup><div className="popup-equipamento"><strong>Índice de atenção: {intensidade}/100</strong><span>Composição de trânsito, manutenção de equipamentos e ocorrências recentes.</span></div></Popup>
       </CircleMarker>
     );
   })}</>;
@@ -252,6 +252,8 @@ function CamadaCalor({ pontosCalor, ativa }: { pontosCalor: PontoCalor[]; ativa:
 
 export default function MapaEquipamentos({ equipamentos, agentes = [], cameras = [], transito = [], acidentes = [], localAcidenteSelecionado, pontosCalor = [], selecionarLocalAcidente = false, onSelecionarLocalAcidente, onSolicitarLocalizacao, localizacaoUsuario, enquadramento = 'usuario', onEditarEquipamento, onEditarAgente, onVerHistoricoAgente, onReproduzirCamera }: Props) {
   const [mostrarMapaCalor, setMostrarMapaCalor] = useState(false);
+  const equipamentosVisiveis = equipamentos.filter((equipamento) => equipamento.situacao !== 'desativado');
+  const agentesVisiveis = agentes.filter((agente) => agente.situacao !== 'inativo');
   return (
     <div className={`mapa-equipamentos${selecionarLocalAcidente ? ' mapa-selecionando-acidente' : ''}`} aria-label="Mapa de equipamentos, agentes, trânsito e ocorrências georreferenciadas">
       <MapContainer center={centroTupa} zoom={12} scrollWheelZoom className="mapa-leaflet">
@@ -266,19 +268,19 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
           alternarMapaCalor={() => setMostrarMapaCalor((atual) => !atual)}
         />
         <CamadaCalor pontosCalor={pontosCalor} ativa={mostrarMapaCalor} />
-        <AjustarEnquadramento equipamentos={equipamentos} agentes={agentes} cameras={cameras} transito={transito} acidentes={acidentes} localizacaoUsuario={localizacaoUsuario} enquadramento={enquadramento} />
+        <AjustarEnquadramento equipamentos={equipamentosVisiveis} agentes={agentesVisiveis} cameras={cameras} transito={transito} acidentes={acidentes} localizacaoUsuario={localizacaoUsuario} enquadramento={enquadramento} />
         <CapturarLocalAcidente ativo={selecionarLocalAcidente} aoSelecionar={onSelecionarLocalAcidente} />
         {transito.map((item) => (
           <Marker key={`transito-${item.id}`} position={[item.latitude, item.longitude]} icon={criarIconeTransito(item.congestionamentoPercentual)}>
-            <Popup><div className="popup-equipamento"><strong>Trânsito · {item.cidade}</strong><span>Volume demonstrativo: {item.veiculosUltimaHora} veículos na última hora.</span><span>Velocidade média: {item.velocidadeMediaKmh} km/h · congestionamento: {item.congestionamentoPercentual}%.</span><span>Próxima hora: {item.veiculosPrevistosProximaHora} veículos · {item.congestionamentoPrevistoPercentual}% projetado.</span><span>Confiança heurística: {item.confianca} · {item.amostrasHistoricas} amostras comparáveis.</span><strong className="popup-fonte">SIMULADO · {item.referenciaMapa}. Não é medição em tempo real.</strong></div></Popup>
+            <Popup><div className="popup-equipamento"><strong>Trânsito · {item.cidade}</strong><span>{item.veiculosUltimaHora} veículos na última hora.</span><span>Velocidade média: {item.velocidadeMediaKmh} km/h · congestionamento: {item.congestionamentoPercentual}%.</span><span>Projeção para a próxima hora: {item.veiculosPrevistosProximaHora} veículos · {item.congestionamentoPrevistoPercentual}%.</span><span>Nível de confiança: {item.confianca} · {item.amostrasHistoricas} amostras comparáveis.</span><strong className="popup-fonte">DADOS DE DEMONSTRAÇÃO · {item.referenciaMapa}.</strong></div></Popup>
           </Marker>
         ))}
         {acidentes.map((acidente) => (
           <Marker key={`acidente-${acidente.id}`} position={[acidente.latitude, acidente.longitude]} icon={iconeAcidente} zIndexOffset={1800}>
-            <Popup><div className="popup-equipamento"><strong>Acidente · {acidente.grau}</strong><span>{acidente.localDescricao} · {acidente.cidade}</span><span>Impacto no trânsito: {acidente.impactoTransito} · feridos: {acidente.haFeridos ? 'informados' : 'não informados'}.</span><span>Situação: {acidente.situacao}.</span><span>Registro interno · não substitui comunicação aos serviços de emergência.</span></div></Popup>
+            <Popup><div className="popup-equipamento"><strong>Acidente · {acidente.grau}</strong><span>{acidente.localDescricao} · {acidente.cidade}</span><span>Impacto no trânsito: {acidente.impactoTransito} · feridos: {acidente.haFeridos ? 'informados' : 'não informados'}.</span><span>Situação: {acidente.situacao}.</span><span>Registro no F.O.G.O. · integração com serviços externos não configurada.</span></div></Popup>
           </Marker>
         ))}
-        {equipamentos.map((equipamento) => (
+        {equipamentosVisiveis.map((equipamento) => (
           <Marker
             key={equipamento.id}
             position={[equipamento.latitude, equipamento.longitude]}
@@ -289,22 +291,22 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
                 <strong>{equipamento.tipo}</strong>
                 <span>Série {equipamento.numeroSerie}</span>
                 {!equipamento.urlFonte && <span>{[equipamento.marca, equipamento.modelo].filter(Boolean).join(' · ') || 'Marca/modelo não informados'}</span>}
-                <span>{equipamento.urlFonte ? 'Posição mapeada · situação não verificada' : rotuloSituacao[equipamento.situacao] ?? equipamento.situacao}</span>
+                <span>{equipamento.urlFonte ? 'Posição georreferenciada · fonte OpenStreetMap' : rotuloSituacao[equipamento.situacao] ?? equipamento.situacao}</span>
                 {!equipamento.urlFonte && equipamento.caracteristicas && Object.keys(equipamento.caracteristicas).length > 0 && <span>Características: {Object.entries(equipamento.caracteristicas).map(([nome, valor]) => `${nome}: ${valor}`).join(' · ')}</span>}
                 <span>{equipamento.rua}{equipamento.referencia ? ` · ${equipamento.referencia}` : ''}</span>
                 <span>{equipamento.bairro}, {equipamento.cidade}/{equipamento.uf}</span>
                 {!equipamento.urlFonte && equipamento.cep && <span>CEP {equipamento.cep}</span>}
                 {!equipamento.urlFonte && equipamento.necessitaManutencao && <span>Manutenção: {equipamento.tipoManutencao === 'imediata' ? 'Imediata' : equipamento.tipoManutencao === 'agendada' ? 'Agendada' : equipamento.tipoManutencao === 'periodica' ? 'Periódica' : 'Indicada'}{equipamento.proximaManutencao ? ` · próxima em ${new Intl.DateTimeFormat('pt-BR').format(new Date(`${equipamento.proximaManutencao}T00:00:00`))}` : ''}</span>}
                 {!equipamento.urlFonte && <span>Coordenadas: {equipamento.latitude}, {equipamento.longitude}</span>}
-                {equipamento.origemDados === 'simulado' && <strong className="popup-aviso">DADO SIMULADO · não confirma radar ou equipamento real.</strong>}
-                {equipamento.urlFonte && <strong className="popup-fonte">Fonte: {equipamento.fonte ?? 'OpenStreetMap'}{equipamento.velocidadeMaxima ? ` · Máx. ${equipamento.velocidadeMaxima}` : ''} · situação não verificada.</strong>}
+                {equipamento.origemDados === 'simulado' && <strong className="popup-aviso">EQUIPAMENTO DEMONSTRATIVO</strong>}
+                {equipamento.urlFonte && <strong className="popup-fonte">Fonte: {equipamento.fonte ?? 'OpenStreetMap'}{equipamento.velocidadeMaxima ? ` · Máx. ${equipamento.velocidadeMaxima}` : ''} · status informado pela fonte.</strong>}
                 {equipamento.urlFonte && <a href={equipamento.urlFonte} target="_blank" rel="noreferrer">Ver objeto no OpenStreetMap ↗</a>}
                 {!equipamento.urlFonte && onEditarEquipamento && <button type="button" className="mapa-acao-popup" onClick={() => onEditarEquipamento(equipamento.id)}>Editar equipamento</button>}
               </div>
             </Popup>
           </Marker>
         ))}
-        {agentes.map((agente) => (
+        {agentesVisiveis.map((agente) => (
           <Marker
             key={`agente-${agente.id}`}
             position={[agente.latitude, agente.longitude]}
@@ -316,7 +318,7 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
                 <span>{agente.categoriaProfissional}</span>
                 <span>{agente.situacao === 'disponivel' ? 'Disponível' : agente.situacao === 'emAtendimento' ? 'Em atendimento' : 'Indisponível'} · situação informada</span>
                 <span>{agente.baseOperacional}</span>
-                {agente.origemDados === 'simulado' && <strong className="popup-fonte">Demonstração · posição ilustrativa, sem rastreamento real.</strong>}
+                {agente.origemDados === 'simulado' && <strong className="popup-fonte">REGISTRO DEMONSTRATIVO · posição de referência cadastrada.</strong>}
                 {onEditarAgente && <button type="button" className="mapa-acao-popup" onClick={() => onEditarAgente(agente.id)}>Editar agente</button>}
                 {onVerHistoricoAgente && <button type="button" className="mapa-acao-popup mapa-acao-secundaria" onClick={() => onVerHistoricoAgente(agente.id)}>Ver histórico de localizações</button>}
               </div>
@@ -328,7 +330,7 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
             <Popup>
               <div className="popup-equipamento">
                 <strong>{marcador.aproximada ? `${marcador.cameras.length} câmera(s) · referência municipal` : marcador.cameras[0].nome}</strong>
-                <span>{marcador.cidade}{marcador.aproximada ? ' · centro municipal aproximado; não é a posição individual das câmeras' : marcador.cameras[0].endereco ? ` · ${marcador.cameras[0].endereco}` : ''}</span>
+                <span>{marcador.cidade}{marcador.aproximada ? ' · referência geográfica aproximada do município' : marcador.cameras[0].endereco ? ` · ${marcador.cameras[0].endereco}` : ''}</span>
                 {marcador.cameras.map((camera) => <div className="popup-camera-item" key={camera.id}><span>{camera.nome}</span>{onReproduzirCamera && <button type="button" className="mapa-acao-popup mapa-camera-play" onClick={() => onReproduzirCamera(camera)}>▶ Assistir</button>}</div>)}
               </div>
             </Popup>

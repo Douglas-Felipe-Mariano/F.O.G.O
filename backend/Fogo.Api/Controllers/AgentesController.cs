@@ -63,7 +63,7 @@ public sealed class AgentesController(
         return Ok(await servico.ListarLocalizacoesAsync(deslocamento, limite, cancelamento));
     }
 
-    [HttpGet("{id:guid}")]
+    [HttpGet("{id:guid}", Name = "ConsultarAgente")]
     public async Task<ActionResult<AgenteResposta>> ConsultarAsync(Guid id, CancellationToken cancelamento)
     {
         var agente = await servico.ConsultarAsync(id, cancelamento);
@@ -83,7 +83,7 @@ public sealed class AgentesController(
 
         var agente = resultado.Valor!;
         await publicadorEventos.PublicarAlteracaoAsync(agente.Id, "criado", agente.AtualizadoEm, cancelamento);
-        return CreatedAtAction(nameof(ConsultarAsync), new { id = agente.Id }, agente);
+        return CreatedAtRoute("ConsultarAgente", new { id = agente.Id }, agente);
     }
 
     [HttpPut("{id:guid}")]
@@ -106,6 +106,19 @@ public sealed class AgentesController(
         }
 
         var agente = resultado.Valor!;
+        await publicadorEventos.PublicarAlteracaoAsync(agente.Id, "atualizado", agente.AtualizadoEm, cancelamento);
+        return Ok(agente);
+    }
+
+    [HttpPost("{id:guid}/inativar")]
+    public async Task<ActionResult<AgenteResposta>> InativarAsync(Guid id, CancellationToken cancelamento)
+    {
+        var agente = await servico.InativarAsync(id, cancelamento);
+        if (agente is null)
+        {
+            return NotFound();
+        }
+
         await publicadorEventos.PublicarAlteracaoAsync(agente.Id, "atualizado", agente.AtualizadoEm, cancelamento);
         return Ok(agente);
     }

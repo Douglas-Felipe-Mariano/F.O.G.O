@@ -4,7 +4,8 @@ public enum SituacaoAgente
 {
     Disponivel = 1,
     EmAtendimento = 2,
-    Indisponivel = 3
+    Indisponivel = 3,
+    Inativo = 4
 }
 
 public sealed class Agente

@@ -122,6 +122,20 @@ public sealed class AgenteService(IAgenteRepository repositorio, TimeProvider re
         return ResultadoOperacao<AgenteResposta>.Sucesso(AgenteResposta.De(agente));
     }
 
+    public async Task<AgenteResposta?> InativarAsync(Guid id, CancellationToken cancelamento)
+    {
+        var agente = await repositorio.ConsultarParaAtualizacaoAsync(id, cancelamento);
+        if (agente is null)
+        {
+            return null;
+        }
+
+        agente.Situacao = SituacaoAgente.Inativo;
+        agente.AtualizadoEm = relogio.GetUtcNow();
+        await repositorio.SalvarAlteracoesAsync(cancelamento);
+        return AgenteResposta.De(agente);
+    }
+
     private static Dictionary<string, string[]> Validar(AgenteRequisicao requisicao)
     {
         var erros = new Dictionary<string, string[]>(StringComparer.Ordinal);

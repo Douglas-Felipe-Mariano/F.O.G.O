@@ -1,6 +1,8 @@
 using Fogo.Api.Application.Inventario;
+using Fogo.Api.Controllers;
 using Fogo.Api.Inventario;
 using Fogo.Api.Repositories;
+using Microsoft.AspNetCore.Mvc;
 using Xunit;
 
 namespace Fogo.Tests;
@@ -97,6 +99,77 @@ public sealed class AgenteServiceTests
         Assert.Equal(-21.9m, localizacao.Latitude);
         Assert.Equal(-50.5m, localizacao.Longitude);
         Assert.True(repositorio.SalvouAlteracoes);
+    }
+
+    [Fact]
+    public async Task InativarAsync_AgenteExistente_AtualizaSituacaoEPreservaDadosEHistorico()
+    {
+        var criadoEm = new DateTimeOffset(2026, 10, 20, 8, 0, 0, TimeSpan.Zero);
+        var atualizadoEm = new DateTimeOffset(2026, 10, 27, 14, 0, 0, TimeSpan.Zero);
+        var agente = CriarAgente();
+        agente.CriadoEm = criadoEm;
+        var repositorio = new RepositorioAgentesFalso { AgenteParaAtualizacao = agente };
+        var servico = new AgenteService(repositorio, new RelogioFalso(atualizadoEm));
+
+        var resposta = await servico.InativarAsync(agente.Id, CancellationToken.None);
+
+        Assert.NotNull(resposta);
+        Assert.Equal(SituacaoAgente.Inativo, agente.Situacao);
+        Assert.Equal(atualizadoEm, agente.AtualizadoEm);
+        Assert.Equal(criadoEm, agente.CriadoEm);
+        Assert.Equal("Ana Silva", agente.Nome);
+        Assert.Equal(agente.Id, resposta.Id);
+        Assert.True(repositorio.SalvouAlteracoes);
+        Assert.Empty(repositorio.LocalizacoesHistoricasAdicionadas);
+    }
+
+    [Fact]
+    public async Task InativarAsync_AgenteInexistente_RetornaNuloESemSalvar()
+    {
+        var repositorio = new RepositorioAgentesFalso();
+        var servico = new AgenteService(repositorio, TimeProvider.System);
+
+        var resposta = await servico.InativarAsync(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Null(resposta);
+        Assert.False(repositorio.SalvouAlteracoes);
+    }
+
+    [Fact]
+    public async Task InativarController_PublicaEventoDepoisDaPersistencia()
+    {
+        var agente = CriarAgente();
+        var repositorio = new RepositorioAgentesFalso { AgenteParaAtualizacao = agente };
+        var publicador = new PublicadorAgentesFalso(() => repositorio.SalvouAlteracoes);
+        var controller = new AgentesController(
+            new AgenteService(repositorio, TimeProvider.System),
+            publicador);
+
+        var resposta = await controller.InativarAsync(agente.Id, CancellationToken.None);
+
+        var resultado = Assert.IsType<OkObjectResult>(resposta.Result);
+        var agenteAtualizado = Assert.IsType<AgenteResposta>(resultado.Value);
+        var evento = Assert.Single(publicador.Eventos);
+        Assert.Equal(SituacaoAgente.Inativo, agenteAtualizado.Situacao);
+        Assert.True(publicador.PublicadoDepoisDeSalvar);
+        Assert.Equal(agente.Id, evento.AgenteId);
+        Assert.Equal("atualizado", evento.Operacao);
+    }
+
+    [Fact]
+    public async Task InativarController_AgenteInexistente_NaoPublicaEvento()
+    {
+        var repositorio = new RepositorioAgentesFalso();
+        var publicador = new PublicadorAgentesFalso(() => repositorio.SalvouAlteracoes);
+        var controller = new AgentesController(
+            new AgenteService(repositorio, TimeProvider.System),
+            publicador);
+
+        var resposta = await controller.InativarAsync(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(resposta.Result);
+        Assert.Empty(publicador.Eventos);
+        Assert.False(repositorio.SalvouAlteracoes);
     }
 
     [Fact]
@@ -224,14 +297,15 @@ public sealed class AgenteServiceTests
         [
             new(SituacaoAgente.Disponivel, 4),
             new(SituacaoAgente.EmAtendimento, 2),
-            new(SituacaoAgente.Indisponivel, 3)
+            new(SituacaoAgente.Indisponivel, 3),
+            new(SituacaoAgente.Inativo, 5)
         ];
         var repositorio = new RepositorioAgentesFalso { Contagens = contagens };
         var servico = new AgenteService(repositorio, TimeProvider.System);
 
         var indicadores = await servico.ConsultarIndicadoresAsync(CancellationToken.None);
 
-        Assert.Equal(9, indicadores.TotalCadastrado);
+        Assert.Equal(14, indicadores.TotalCadastrado);
         Assert.Equal(6, indicadores.EmAtividadeDeclarada);
         Assert.Equal(contagens, indicadores.PorSituacao);
     }
@@ -274,6 +348,19 @@ public sealed class AgenteServiceTests
     private sealed class RelogioFalso(DateTimeOffset agora) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => agora;
+    }
+
+    private sealed class PublicadorAgentesFalso(Func<bool> foiSalvo) : IPublicadorEventosAgentes
+    {
+        public List<EventoAgenteAlterado> Eventos { get; } = [];
+        public bool PublicadoDepoisDeSalvar { get; private set; }
+
+        public Task PublicarAlteracaoAsync(Guid agenteId, string operacao, DateTimeOffset atualizadoEm, CancellationToken cancelamento)
+        {
+            PublicadoDepoisDeSalvar = foiSalvo();
+            Eventos.Add(new EventoAgenteAlterado(agenteId, operacao, atualizadoEm));
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RepositorioAgentesFalso : IAgenteRepository
