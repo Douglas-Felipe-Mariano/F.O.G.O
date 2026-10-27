@@ -62,8 +62,8 @@ public sealed class AgenteRepository(FogoDbContext banco) : IAgenteRepository
     public async Task<IReadOnlyCollection<ContagemSituacaoAgente>> ContarPorSituacaoAsync(CancellationToken cancelamento) =>
         await banco.Agentes.AsNoTracking()
             .GroupBy(agente => agente.Situacao)
+            .OrderBy(grupo => grupo.Key)
             .Select(grupo => new ContagemSituacaoAgente(grupo.Key, grupo.Count()))
-            .OrderBy(item => item.Situacao)
             .ToArrayAsync(cancelamento);
 
     public async Task AdicionarAsync(Agente agente, CancellationToken cancelamento)

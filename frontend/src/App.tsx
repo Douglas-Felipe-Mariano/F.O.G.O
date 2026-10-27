@@ -160,12 +160,12 @@ function App() {
           cache: 'no-store',
         });
         if (!resposta.ok) {
-          throw new Error(`A API não conseguiu iniciar a proteção CSRF (HTTP ${resposta.status}).`);
+          throw new Error('Não foi possível iniciar a proteção da sessão. Atualize a página e tente novamente.');
         }
 
         const csrf = lerCookie('fogo.csrf');
         if (!csrf) {
-          throw new Error('A API respondeu, mas o navegador não recebeu o cookie CSRF. Atualize a página e confira a conexão local.');
+          throw new Error('O navegador não conseguiu iniciar a sessão protegida. Confira as configurações de privacidade e tente novamente.');
         }
         return csrf;
       })().finally(() => { emissaoCsrfEmAndamento.current = null; });
@@ -420,9 +420,9 @@ function App() {
       });
       if (!resposta.ok) throw new Error(resposta.status === 401
         ? 'Usuário ou senha inválidos, ou e-mail ainda não confirmado.'
-        : resposta.status === 403
-          ? 'A API recusou a origem ou a proteção CSRF. Atualize a página; se persistir, confira FOGO_ORIGINS.'
-          : 'Não foi possível entrar. Confira se a API está disponível.');
+          : resposta.status === 403
+          ? 'Não foi possível validar esta solicitação. Atualize a página e tente novamente.'
+          : 'Não foi possível entrar. Tente novamente em instantes.');
       const dados = await resposta.json() as RespostaToken;
       setToken(dados.tokenAcesso);
       setMensagem('Sessão iniciada.');
@@ -442,7 +442,7 @@ function App() {
     if (!resposta.ok) {
       const errosCampos = corpo?.errors ? Object.values(corpo.errors).flat().join(' ') : '';
       throw new Error(errosCampos || corpo?.mensagem || corpo?.title || (resposta.status === 403
-        ? 'A API recusou a origem ou a proteção CSRF. Atualize a página e confira FOGO_ORIGINS.'
+        ? 'Não foi possível validar esta solicitação. Atualize a página e tente novamente.'
         : 'Não foi possível concluir a solicitação. Confira os dados e tente novamente.'));
     }
     return corpo;
@@ -671,7 +671,7 @@ function App() {
           <span>F.O.G.O.<small>GESTÃO E OPERAÇÕES</small></span>
         </a>
         <div className="top-actions">
-          <span className={`system-status ${token ? 'connected' : ''}`}><i />{token ? 'SESSÃO PROTEGIDA' : 'API AGUARDANDO SESSÃO'}</span>
+          <span className={`system-status ${token ? 'connected' : ''}`}><i />{token ? 'SESSÃO PROTEGIDA' : 'AGUARDANDO ACESSO'}</span>
           {token && <button className="button button-quiet" onClick={() => void sair()}>Encerrar sessão</button>}
         </div>
       </header>
@@ -679,10 +679,10 @@ function App() {
       {!token ? (
         <section className="login-layout" id="inicio">
           <div className="login-copy">
-            <p className="eyebrow"><span>PLATAFORMA OPERACIONAL</span> · ACESSO RESTRITO</p>
-            <h1>Dados reais.<br /><em>Decisões melhores.</em></h1>
+            <p className="eyebrow"><span>PLATAFORMA OPERACIONAL</span> · ACESSO SEGURO</p>
+            <h1>Visão integrada.<br /><em>Decisões melhores.</em></h1>
             <p className="intro">Acesse ou crie sua conta para consultar o inventário operacional do F.O.G.O. O login é liberado após a confirmação do e-mail.</p>
-            <div className="login-notice"><span aria-hidden="true">↳</span> O cadastro está aberto e ainda não há níveis diferenciados de permissão.</div>
+            <div className="login-notice"><span aria-hidden="true">↳</span> Confirme seu e-mail para ativar a conta antes do primeiro acesso.</div>
           </div>
           <div className="login-card">
             <div className="card-kicker">01 / AUTENTICAÇÃO</div>
@@ -698,7 +698,7 @@ function App() {
               {mensagem && <p className="alert success" role="status">{mensagem}</p>}
               <button className="button button-primary" type="submit" disabled={preparandoSessao}>{preparandoSessao ? 'Preparando acesso…' : <>Entrar <span aria-hidden="true">↗</span></>}</button>
               <div className="login-links"><button className="auth-link" type="button" onClick={() => trocarModoAutenticacao('recuperacao')}>Esqueci minha senha</button><button className="auth-link" type="button" onClick={() => trocarModoAutenticacao('cadastro')}>Criar conta</button></div>
-              <p className="form-hint">A sessão usa token de acesso curto e cookie de atualização protegido.</p>
+              <p className="form-hint">Confirmação de conta e recuperação de acesso são enviadas ao e-mail cadastrado.</p>
             </form>}
             {modoAutenticacao === 'cadastro' && <form onSubmit={(evento) => void cadastrar(evento)}>
               <label>E-mail<input type="email" autoComplete="email" maxLength={256} required value={emailAutenticacao} onChange={(e) => setEmailAutenticacao(e.target.value)} /></label>
@@ -737,9 +737,9 @@ function App() {
         <section className={`workspace ${visao === 'mapa' ? 'workspace-map' : ''}`} id="inicio">
           <div className={`workspace-heading ${visao === 'mapa' ? 'workspace-heading-map' : ''}`}>
             <div>
-              <p className="eyebrow"><span>{visao === 'mapa' ? 'MAPA OPERACIONAL' : 'INVENTÁRIO'}</span> · DADOS PERSISTIDOS</p>
+              <p className="eyebrow"><span>{visao === 'mapa' ? 'MAPA OPERACIONAL' : 'INVENTÁRIO'}</span> · OPERAÇÃO DA CIDADE</p>
               <h1>{visao === 'mapa' ? <>Mapa geográfico<span className="heading-period">.</span></> : <>Visão operacional<span className="heading-period">.</span></>}</h1>
-              {visao !== 'mapa' && <p className="intro">Consulte e mantenha os equipamentos cadastrados. Indicadores refletem registros persistidos; pontos simulados estão identificados como tal.</p>}
+              {visao !== 'mapa' && <p className="intro">Consulte e mantenha os equipamentos cadastrados. Indicadores refletem o inventário; registros simulados são identificados como tal.</p>}
             </div>
             <button className="button button-primary create-button" onClick={abrirNovo}>＋ Novo equipamento</button>
           </div>
@@ -748,7 +748,7 @@ function App() {
           {mensagem && <p className="alert success" role="status">{mensagem}</p>}
 
           {visao !== 'mapa' && <div className="metric-grid">
-            <article className="metric-card"><span className="metric-label">EQUIPAMENTOS CADASTRADOS</span><strong>{indicadores?.totalCadastrado ?? '—'}</strong><small>total persistido</small></article>
+            <article className="metric-card"><span className="metric-label">EQUIPAMENTOS CADASTRADOS</span><strong>{indicadores?.totalCadastrado ?? '—'}</strong><small>no inventário</small></article>
             <article className="metric-card"><span className="metric-label">OPERACIONAIS</span><strong>{indicadores?.porSituacao.find((item) => item.situacao === 'operacional')?.quantidade ?? 0}</strong><small>situação declarada</small></article>
             <article className="metric-card"><span className="metric-label">NECESSITAM MANUTENÇÃO</span><strong>{indicadores?.necessitamManutencao ?? '—'}</strong><small>conforme cadastro</small><button type="button" className="maintenance-shortcut" onClick={abrirFilaManutencao}>Abrir fila →</button></article>
           </div>}
@@ -772,8 +772,8 @@ function App() {
               <button className="button button-secondary" type="submit">Aplicar filtros</button>
               <button className="button button-quiet" type="button" onClick={() => { setFiltros(vazioFiltros); setPesquisa(vazioFiltros); setFiltroManutencao(''); setPesquisaManutencao(''); setPagina(1); }}>Limpar</button>
             </form>
-            {carregando ? <div className="empty-state"><span className="spinner" />Carregando dados persistidos…</div> : itens.length === 0 ? (
-              <div className="empty-state"><span className="empty-icon">⌁</span><h3>{total > 0 ? 'Nenhum resultado nesta página' : filaSemOutrosFiltros ? 'Nenhuma manutenção indicada' : possuiFiltrosInventario ? 'Nenhum resultado para os filtros' : 'Nenhum equipamento cadastrado'}</h3><p>{total > 0 ? 'Altere os filtros ou navegue para outra página.' : filaSemOutrosFiltros ? 'Nenhum registro persistido está marcado como necessitando manutenção.' : possuiFiltrosInventario ? 'Revise ou limpe os filtros para consultar outros equipamentos.' : 'O inventário está vazio. Cadastre um equipamento para começar.'}</p>{total === 0 && !possuiFiltrosInventario && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro equipamento</button>}</div>
+            {carregando ? <div className="empty-state"><span className="spinner" />Consultando equipamentos…</div> : itens.length === 0 ? (
+              <div className="empty-state"><span className="empty-icon">⌁</span><h3>{total > 0 ? 'Nenhum resultado nesta página' : filaSemOutrosFiltros ? 'Nenhuma manutenção indicada' : possuiFiltrosInventario ? 'Nenhum resultado para os filtros' : 'Nenhum equipamento cadastrado'}</h3><p>{total > 0 ? 'Altere os filtros ou navegue para outra página.' : filaSemOutrosFiltros ? 'Nenhum equipamento tem manutenção indicada.' : possuiFiltrosInventario ? 'Revise ou limpe os filtros para consultar outros equipamentos.' : 'O inventário está vazio. Cadastre um equipamento para começar.'}</p>{total === 0 && !possuiFiltrosInventario && <button className="button button-primary" onClick={abrirNovo}>Cadastrar primeiro equipamento</button>}</div>
             ) : (
               <div className="table-wrap"><table><thead><tr><th>Equipamento</th><th>Localização</th><th>Situação</th><th>Manutenção</th><th>Origem</th><th><span className="sr-only">Ação</span></th></tr></thead><tbody>{itens.map((item) => (
                 <tr key={item.id}>
@@ -835,7 +835,7 @@ function App() {
             </div>}
             {mapaAgentes?.resultadoTruncado && <div className="mapa-alerta" role="status"><span>Alguns agentes não foram carregados. Atualize o mapa para tentar novamente.</span></div>}
             {radaresOpenStreetMap && !radaresOpenStreetMap.disponivel && <div className="mapa-alerta mapa-alerta-fonte" role="status">{radaresOpenStreetMap.aviso}</div>}
-            {indicadores?.porLocalidade.length ? <details className="painel-insights"><summary>Consolidação por localidade cadastrada · bairro/cidade</summary><p>É um resumo dos registros por bairro, cidade e UF; o sistema ainda não tem limites oficiais de regiões nem vínculo com órgãos.</p><div className="painel-insights-tabela"><table><thead><tr><th>Localidade</th><th>Operacionais / instalados</th><th>Indisponíveis</th><th>Imediatas</th><th>Vencidas</th><th>Próx. 7 dias</th></tr></thead><tbody>{indicadores.porLocalidade.map((localidade) => <tr key={`${localidade.cidade}-${localidade.uf}-${localidade.bairro}`}><td>{localidade.bairro}, {localidade.cidade}/{localidade.uf}</td><td>{localidade.operacionais} / {localidade.totalInstalado}</td><td>{localidade.indisponiveis}</td><td>{localidade.manutencoesImediatas}</td><td>{localidade.manutencoesVencidas}</td><td>{localidade.manutencoesProximas}</td></tr>)}</tbody></table></div></details> : null}
+            {indicadores?.porLocalidade.length ? <details className="painel-insights"><summary>Consolidação por localidade · bairro/cidade</summary><p>Resumo agrupado pelo bairro, cidade e UF informados no cadastro.</p><div className="painel-insights-tabela"><table><thead><tr><th>Localidade</th><th>Operacionais / instalados</th><th>Indisponíveis</th><th>Imediatas</th><th>Vencidas</th><th>Próx. 7 dias</th></tr></thead><tbody>{indicadores.porLocalidade.map((localidade) => <tr key={`${localidade.cidade}-${localidade.uf}-${localidade.bairro}`}><td>{localidade.bairro}, {localidade.cidade}/{localidade.uf}</td><td>{localidade.operacionais} / {localidade.totalInstalado}</td><td>{localidade.indisponiveis}</td><td>{localidade.manutencoesImediatas}</td><td>{localidade.manutencoesVencidas}</td><td>{localidade.manutencoesProximas}</td></tr>)}</tbody></table></div></details> : null}
             {indicadores && <details className="painel-insights"><summary>Projeção de manutenção · próximos 30 dias ({indicadores.projecaoManutencao.reduce((totalProgramado, item) => totalProgramado + item.quantidade, 0)} programada(s))</summary><p>Projeção determinística baseada nas datas de manutenção cadastradas entre {dataLocal(indicadores.inicioProjecao)} e {dataLocal(indicadores.fimProjecao)}. Não é previsão de falhas ou ocorrências.</p>{indicadores.projecaoManutencao.length ? <div className="painel-insights-tabela"><table><thead><tr><th>Data prevista</th><th>Localidade</th><th>Equipamentos</th></tr></thead><tbody>{indicadores.projecaoManutencao.map((item, indice) => <tr key={`${item.data}-${item.cidade}-${item.bairro}-${indice}`}><td>{dataLocal(item.data)}</td><td>{item.bairro}, {item.cidade}/{item.uf}</td><td>{item.quantidade}</td></tr>)}</tbody></table></div> : <p>Nenhuma manutenção agendada para o horizonte apresentado.</p>}</details>}
             <div className="mapa-conteudo">
               <MapaEquipamentos
@@ -850,7 +850,7 @@ function App() {
                 onVerTrajetoAgente={(id) => void carregarTrajetoAgente(id)}
                 onReproduzirCamera={setCameraEmReproducao}
               />
-              {carregandoMapa && <div className="mapa-mensagem-overlay"><strong>Carregando localizações…</strong><span>Consultando os registros persistidos.</span></div>}
+              {carregandoMapa && <div className="mapa-mensagem-overlay"><strong>Carregando localizações…</strong><span>Buscando equipamentos e agentes cadastrados.</span></div>}
               {!carregandoMapa && mapa && mapaAgentes && mapa.itens.length === 0 && mapaAgentes.itens.length === 0 && !camerasMapa.length && !radaresOpenStreetMap?.itens.length && (
                 <div className="mapa-mensagem-overlay"><strong>Nenhum ponto georreferenciado ainda</strong><span>Adicione registros com coordenadas para vê-los aqui. Os pontos demonstrativos aparecem identificados como simulados.</span></div>
               )}
@@ -859,7 +859,7 @@ function App() {
         </section>
       )}
 
-      <footer className="footer"><span>F.O.G.O. <span className="muted">/</span> FERRAMENTA ONISCIENTE DE GESTÃO E OPERAÇÕES</span><span className="footer-right"><i /> DADOS VINCULADOS À API{token && ` · TEMPO REAL ${statusTempoReal.toUpperCase()}`}</span></footer>
+      <footer className="footer"><span>F.O.G.O. <span className="muted">/</span> FERRAMENTA ONISCIENTE DE GESTÃO E OPERAÇÕES</span><span className="footer-right"><i />{token ? `TEMPO REAL ${statusTempoReal.toUpperCase()}` : 'PLATAFORMA OPERACIONAL'}</span></footer>
 
       {modalAberto && <div className="modal-backdrop" role="presentation" onMouseDown={(evento) => { if (evento.target === evento.currentTarget) setModalAberto(false); }}>
         <section className="equipment-modal" role="dialog" aria-modal="true" aria-labelledby="equipment-modal-title">

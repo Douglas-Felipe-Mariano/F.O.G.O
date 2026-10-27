@@ -242,11 +242,24 @@ public static class EndpointsAutenticacao
             var html = $"<p>{(acao == "confirmar" ? "Confirme seu endereço de e-mail" : "Solicitação para redefinir sua senha")} no F.O.G.O.:</p><p><a href=\"{linkHtml}\">{(acao == "confirmar" ? "Confirmar e-mail" : "Redefinir senha")}</a></p><p>Se você não solicitou esta ação, ignore esta mensagem.</p>";
             var assunto = acao == "confirmar" ? "Confirme seu e-mail — F.O.G.O." : "Recuperação de senha — F.O.G.O.";
             await remetenteEmail.EnviarAsync(email, assunto, texto, html, cancelamento);
+            logger.LogInformation("E-mail de autenticação aceito pelo servidor SMTP. Ação: {Acao}; destinatário: {DestinatarioMascarado}", acao, MascararEmail(email));
         }
         catch (Exception excecao) when (excecao is not OperationCanceledException)
         {
-            logger.LogError("Não foi possível enviar e-mail de autenticação. Tipo da falha: {TipoFalha}", excecao.GetType().Name);
+            var statusSmtp = excecao is MailKit.Net.Smtp.SmtpCommandException falhaSmtp
+                ? falhaSmtp.StatusCode.ToString()
+                : "não disponível";
+            logger.LogError("Não foi possível enviar e-mail de autenticação. Tipo da falha: {TipoFalha}; status SMTP: {StatusSmtp}", excecao.GetType().Name, statusSmtp);
         }
+    }
+
+    private static string MascararEmail(string email)
+    {
+        var separador = email.LastIndexOf('@');
+        if (separador <= 0 || separador == email.Length - 1) return "endereço inválido";
+        var local = email[..separador];
+        var dominio = email[(separador + 1)..];
+        return $"{local[0]}***@{dominio[0]}***";
     }
 
     private static async Task<IResult> EntrarAsync(

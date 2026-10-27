@@ -83,6 +83,9 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
         CancellationToken cancelamento) =>
         await banco.Equipamentos.AsNoTracking()
             .GroupBy(item => new { item.Bairro, item.Cidade, item.Uf })
+            .OrderBy(grupo => grupo.Key.Cidade)
+            .ThenBy(grupo => grupo.Key.Bairro)
+            .ThenBy(grupo => grupo.Key.Uf)
             .Select(grupo => new ResumoOperacionalLocalidade(
                 grupo.Key.Bairro,
                 grupo.Key.Cidade,
@@ -100,9 +103,6 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
                     && item.TipoManutencao != TipoManutencao.Imediata
                     && item.ProximaManutencao >= hoje
                     && item.ProximaManutencao <= fimJanelaAviso)))
-            .OrderBy(item => item.Cidade)
-            .ThenBy(item => item.Bairro)
-            .ThenBy(item => item.Uf)
             .ToArrayAsync(cancelamento);
 
     public async Task<IReadOnlyCollection<ProjecaoManutencaoLocalidade>> ConsultarProjecaoManutencaoAsync(
@@ -115,15 +115,15 @@ public sealed class EquipamentoRepository(FogoDbContext banco) : IEquipamentoRep
                 && item.ProximaManutencao >= hoje
                 && item.ProximaManutencao <= fimHorizonte)
             .GroupBy(item => new { item.Bairro, item.Cidade, item.Uf, Data = item.ProximaManutencao!.Value })
+            .OrderBy(grupo => grupo.Key.Data)
+            .ThenBy(grupo => grupo.Key.Cidade)
+            .ThenBy(grupo => grupo.Key.Bairro)
             .Select(grupo => new ProjecaoManutencaoLocalidade(
                 grupo.Key.Bairro,
                 grupo.Key.Cidade,
                 grupo.Key.Uf,
                 grupo.Key.Data,
                 grupo.Count()))
-            .OrderBy(item => item.Data)
-            .ThenBy(item => item.Cidade)
-            .ThenBy(item => item.Bairro)
             .ToArrayAsync(cancelamento);
 
     public async Task AdicionarAsync(Equipamento equipamento, CancellationToken cancelamento)
