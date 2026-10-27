@@ -224,8 +224,8 @@ public sealed class FogoDbContext(DbContextOptions<FogoDbContext> options)
             entidade.Property(camera => camera.Nome).HasColumnName("nome").HasMaxLength(180).IsRequired();
             entidade.Property(camera => camera.UrlStream).HasColumnName("url_stream").HasMaxLength(600).IsRequired();
             entidade.Property(camera => camera.Endereco).HasColumnName("endereco").HasMaxLength(240);
-            entidade.Property(camera => camera.Latitude).HasColumnName("latitude").HasPrecision(9, 6);
-            entidade.Property(camera => camera.Longitude).HasColumnName("longitude").HasPrecision(9, 6);
+            entidade.Property(camera => camera.Latitude).HasColumnName("latitude").HasPrecision(10, 7);
+            entidade.Property(camera => camera.Longitude).HasColumnName("longitude").HasPrecision(10, 7);
             entidade.HasIndex(camera => new { camera.Cidade, camera.Nome }).IsUnique();
             entidade.HasIndex(camera => new { camera.Latitude, camera.Longitude });
         });

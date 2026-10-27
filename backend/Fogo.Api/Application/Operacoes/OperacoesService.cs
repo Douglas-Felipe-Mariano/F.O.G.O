@@ -8,7 +8,6 @@ namespace Fogo.Api.Application.Operacoes;
 public sealed class OperacoesService(FogoDbContext banco, TimeProvider relogio)
 {
     private static readonly TimeZoneInfo FusoBrasilia = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
-
     public async Task<IReadOnlyCollection<TransitoSegmentoResposta>> ConsultarTransitoAsync(CancellationToken cancelamento)
     {
         var agora = relogio.GetUtcNow();
@@ -67,6 +66,239 @@ public sealed class OperacoesService(FogoDbContext banco, TimeProvider relogio)
         }
 
         return respostas;
+    }
+
+    public async Task<PredicoesOperacionaisResposta> ConsultarPredicoesAsync(CancellationToken cancelamento)
+    {
+        var agora = relogio.GetUtcNow();
+        var transito = await ConsultarTransitoAsync(cancelamento);
+        var equipamentos = await banco.Equipamentos.AsNoTracking().ToListAsync(cancelamento);
+        var acidentes = await banco.OcorrenciasAcidente.AsNoTracking()
+            .Where(item => item.RegistradoEm >= agora.AddDays(-90))
+            .ToListAsync(cancelamento);
+
+        var regioes = new Dictionary<string, RegiaoPredicao>(StringComparer.OrdinalIgnoreCase);
+        RegiaoPredicao ObterRegiao(string cidade, string bairro)
+        {
+            var cidadeLimpa = cidade.Trim();
+            var bairroLimpo = string.IsNullOrWhiteSpace(bairro) ? "Município" : bairro.Trim();
+            var chave = $"{cidadeLimpa}\u001f{bairroLimpo}";
+            if (!regioes.TryGetValue(chave, out var regiao))
+            {
+                regiao = new RegiaoPredicao(cidadeLimpa, bairroLimpo);
+                regioes.Add(chave, regiao);
+            }
+
+            return regiao;
+        }
+
+        foreach (var grupo in equipamentos.GroupBy(item => new
+                 {
+                     Cidade = item.Cidade.Trim(),
+                     Bairro = string.IsNullOrWhiteSpace(item.Bairro) ? "Município" : item.Bairro.Trim()
+                 }))
+        {
+            ObterRegiao(grupo.Key.Cidade, grupo.Key.Bairro).Equipamentos.AddRange(grupo);
+        }
+
+        foreach (var segmento in transito)
+        {
+            var regiao = EncontrarRegiaoProxima(regioes.Values, segmento.Cidade, segmento.Latitude, segmento.Longitude);
+            (regiao ?? ObterRegiao(segmento.Cidade, "Município")).Transito.Add(segmento);
+        }
+
+        foreach (var acidente in acidentes)
+        {
+            var regiao = EncontrarRegiaoProxima(regioes.Values, acidente.Cidade, acidente.Latitude, acidente.Longitude);
+            (regiao ?? ObterRegiao(acidente.Cidade, "Município")).Acidentes.Add(acidente);
+        }
+
+        var indicePorRegiao = new List<IndiceRiscoRegiaoResposta>();
+        var recomendacoes = new List<RecomendacaoReforcoResposta>();
+        foreach (var regiao in regioes.Values)
+        {
+            var congestionamentoPrevisto = regiao.Transito.Count > 0
+                ? (int)Math.Round(regiao.Transito.Average(item => item.CongestionamentoPrevistoPercentual))
+                : 0;
+            var riscoEquipamentos = CalcularRiscoEquipamentos(regiao.Equipamentos, agora);
+            var riscoAcidentes = CalcularRiscoAcidentes(regiao.Acidentes, agora);
+            var temTransito = regiao.Transito.Count > 0;
+            var indice = (int)Math.Clamp(Math.Round(
+                congestionamentoPrevisto * 0.45
+                + riscoEquipamentos * 0.30
+                + riscoAcidentes * 0.25), 0, 100);
+            var fatores = new List<string>();
+            if (temTransito && congestionamentoPrevisto >= 45)
+                fatores.Add($"congestionamento previsto em {congestionamentoPrevisto}%");
+            if (riscoEquipamentos > 0)
+                fatores.Add($"{regiao.Equipamentos.Count(item => EquipamentoEmRisco(item, agora))} equipamento(s) com falha ou manutenção indicada");
+            if (regiao.Acidentes.Count > 0)
+                fatores.Add($"{regiao.Acidentes.Count} acidente(s) registrado(s) nos últimos 90 dias");
+
+            if (regiao.Equipamentos.Count == 0 && !temTransito && regiao.Acidentes.Count == 0)
+                continue;
+
+            var simulados = regiao.Transito.Any(item => item.OrigemDados == OrigemRegistro.Simulado)
+                || regiao.Equipamentos.Any(item => item.OrigemDados == OrigemRegistro.Simulado);
+            var classificacao = indice switch
+            {
+                >= 80 => "Crítico",
+                >= 60 => "Alto",
+                >= 35 => "Moderado",
+                _ => "Baixo"
+            };
+            indicePorRegiao.Add(new IndiceRiscoRegiaoResposta(
+                regiao.Bairro,
+                regiao.Cidade,
+                indice,
+                classificacao,
+                congestionamentoPrevisto,
+                regiao.Equipamentos.Count(item => EquipamentoEmRisco(item, agora)),
+                regiao.Equipamentos.Count,
+                regiao.Acidentes.Count,
+                regiao.Transito.Sum(item => item.AmostrasHistoricas),
+                simulados,
+                fatores));
+
+            if (indice >= 45)
+            {
+                var referencia = regiao.Transito
+                    .OrderByDescending(item => item.CongestionamentoPrevistoPercentual)
+                    .Select(item => item.Nome)
+                    .FirstOrDefault()
+                    ?? regiao.Equipamentos.FirstOrDefault(item => EquipamentoEmRisco(item, agora))?.Rua
+                    ?? regiao.Bairro;
+                var quantidadeAgentes = indice >= 75 ? 2 : 1;
+                recomendacoes.Add(new RecomendacaoReforcoResposta(
+                    regiao.Cidade,
+                    regiao.Bairro,
+                    referencia,
+                    indice,
+                    quantidadeAgentes,
+                    agora,
+                    agora.AddHours(1),
+                    $"Avaliar reforço preventivo de {quantidadeAgentes} agente(s); índice heurístico {indice}/100. Confirme as condições no local antes de mobilizar a equipe."));
+            }
+        }
+
+        var pontosCalor = new Dictionary<(decimal Latitude, decimal Longitude), int>();
+        void AdicionarPonto(decimal? latitude, decimal? longitude, int peso)
+        {
+            if (latitude is null || longitude is null || peso <= 0)
+                return;
+            var chave = (Math.Round(latitude.Value, 5), Math.Round(longitude.Value, 5));
+            pontosCalor[chave] = Math.Min(100, pontosCalor.GetValueOrDefault(chave) + peso);
+        }
+
+        foreach (var segmento in transito)
+            AdicionarPonto(segmento.Latitude, segmento.Longitude, segmento.CongestionamentoPrevistoPercentual);
+        foreach (var equipamento in equipamentos.Where(item => EquipamentoEmRisco(item, agora)))
+            AdicionarPonto(equipamento.Latitude, equipamento.Longitude, PontuacaoEquipamento(equipamento, agora));
+        foreach (var acidente in acidentes)
+            AdicionarPonto(acidente.Latitude, acidente.Longitude, PontuacaoAcidente(acidente, agora));
+
+        return new PredicoesOperacionaisResposta(
+            indicePorRegiao.OrderByDescending(item => item.IndiceRisco).ThenBy(item => item.Cidade).ThenBy(item => item.Bairro).ToArray(),
+            recomendacoes.OrderByDescending(item => item.IndiceRisco).ThenBy(item => item.Cidade).ThenBy(item => item.Regiao).ToArray(),
+            pontosCalor.Select(item => new PontoCalorResposta(item.Key.Latitude, item.Key.Longitude, item.Value)).ToArray(),
+            agora,
+            "Índice heurístico explicável (45% trânsito previsto, 30% falhas/manutenção, 25% acidentes dos últimos 90 dias). Não é probabilidade nem modelo treinado; trânsito e dados de origem simulada são identificados. Recomendações não despacham agentes.");
+    }
+
+    private static RegiaoPredicao? EncontrarRegiaoProxima(
+        IEnumerable<RegiaoPredicao> regioes,
+        string cidade,
+        decimal latitude,
+        decimal longitude)
+    {
+        return regioes
+            .Where(item => item.Equipamentos.Count > 0
+                && string.Equals(item.Cidade, cidade.Trim(), StringComparison.OrdinalIgnoreCase)
+                && item.Equipamentos.Any(equipamento => equipamento.Latitude.HasValue && equipamento.Longitude.HasValue))
+            .Select(item => new
+            {
+                Regiao = item,
+                Distancia = item.Equipamentos
+                    .Where(equipamento => equipamento.Latitude.HasValue && equipamento.Longitude.HasValue)
+                    .Min(equipamento => DistanciaMetros(latitude, longitude, equipamento.Latitude!.Value, equipamento.Longitude!.Value))
+            })
+            .Where(item => item.Distancia <= 2500)
+            .OrderBy(item => item.Distancia)
+            .Select(item => item.Regiao)
+            .FirstOrDefault();
+    }
+
+    private static double DistanciaMetros(decimal latitudeA, decimal longitudeA, decimal latitudeB, decimal longitudeB)
+    {
+        var deltaLatitude = (double)(latitudeA - latitudeB) * 111_320;
+        var deltaLongitude = (double)(longitudeA - longitudeB) * 111_320 * Math.Cos((double)latitudeA * Math.PI / 180);
+        return Math.Sqrt(deltaLatitude * deltaLatitude + deltaLongitude * deltaLongitude);
+    }
+
+    private static int CalcularRiscoEquipamentos(IEnumerable<Equipamento> equipamentos, DateTimeOffset agora) =>
+        Math.Min(100, equipamentos.Sum(item => PontuacaoEquipamento(item, agora)));
+
+    private static bool EquipamentoEmRisco(Equipamento equipamento, DateTimeOffset agora) =>
+        PontuacaoEquipamento(equipamento, agora) > 0;
+
+    private static int PontuacaoEquipamento(Equipamento equipamento, DateTimeOffset agora)
+    {
+        var pontuacao = equipamento.Situacao switch
+        {
+            SituacaoEquipamento.MauFuncionamento => 40,
+            SituacaoEquipamento.EmManutencao => 30,
+            SituacaoEquipamento.Furtado => 35,
+            _ => 0
+        };
+        if (equipamento.NecessitaManutencao)
+        {
+            var hoje = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(agora, FusoBrasilia).DateTime);
+            var manutencao = equipamento.TipoManutencao switch
+            {
+                TipoManutencao.Imediata => 50,
+                TipoManutencao.Agendada or TipoManutencao.Periodica when equipamento.ProximaManutencao < hoje => 40,
+                TipoManutencao.Agendada or TipoManutencao.Periodica when equipamento.ProximaManutencao <= hoje.AddDays(7) => 20,
+                _ => 15
+            };
+            pontuacao = Math.Max(pontuacao, manutencao);
+        }
+
+        return pontuacao;
+    }
+
+    private static int CalcularRiscoAcidentes(IEnumerable<OcorrenciaAcidente> acidentes, DateTimeOffset agora) =>
+        Math.Min(100, acidentes.Sum(item => PontuacaoAcidente(item, agora)));
+
+    private static int PontuacaoAcidente(OcorrenciaAcidente acidente, DateTimeOffset agora)
+    {
+        var baseRisco = acidente.Grau switch
+        {
+            GrauAcidente.Leve => 15,
+            GrauAcidente.Moderado => 30,
+            GrauAcidente.Grave => 50,
+            GrauAcidente.Critico => 70,
+            _ => 15
+        };
+        baseRisco += acidente.HaFeridos ? 20 : 0;
+        baseRisco += acidente.ImpactoTransito switch
+        {
+            ImpactoTransito.Lentidao => 5,
+            ImpactoTransito.BloqueioParcial => 15,
+            ImpactoTransito.InterdicaoTotal => 20,
+            _ => 0
+        };
+        var idadeDias = Math.Max(0, (agora - acidente.RegistradoEm).TotalDays);
+        var fatorRecencia = idadeDias <= 7 ? 1m : idadeDias <= 30 ? 0.7m : 0.4m;
+        return (int)Math.Round(baseRisco * fatorRecencia);
+    }
+
+    private sealed class RegiaoPredicao(string cidade, string bairro)
+    {
+        public string Cidade { get; } = cidade;
+        public string Bairro { get; } = bairro;
+        public List<Equipamento> Equipamentos { get; } = [];
+        public List<TransitoSegmentoResposta> Transito { get; } = [];
+        public List<OcorrenciaAcidente> Acidentes { get; } = [];
     }
 
     public async Task<IReadOnlyCollection<AlertaOperacionalResposta>> ConsultarAlertasAsync(CancellationToken cancelamento)

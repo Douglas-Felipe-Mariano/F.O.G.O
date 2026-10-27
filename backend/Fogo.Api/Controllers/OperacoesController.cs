@@ -11,6 +11,10 @@ namespace Fogo.Api.Controllers;
 [Route("api/operacoes")]
 public sealed class OperacoesController(OperacoesService service) : ControllerBase
 {
+    [HttpGet("predicoes")]
+    public async Task<ActionResult<PredicoesOperacionaisResposta>> ConsultarPredicoesAsync(CancellationToken cancelamento) =>
+        Ok(await service.ConsultarPredicoesAsync(cancelamento));
+
     [HttpGet("transito")]
     public async Task<ActionResult<IReadOnlyCollection<TransitoSegmentoResposta>>> ConsultarTransitoAsync(CancellationToken cancelamento) =>
         Ok(await service.ConsultarTransitoAsync(cancelamento));

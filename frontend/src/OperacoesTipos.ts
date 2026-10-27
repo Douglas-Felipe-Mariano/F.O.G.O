@@ -50,3 +50,38 @@ export type AlertaOperacional = {
 };
 
 export type AgenteOperacional = { id: string; nome: string; situacao: string };
+
+export type IndiceRiscoRegiao = {
+  bairro: string;
+  cidade: string;
+  indiceRisco: number;
+  classificacao: 'Baixo' | 'Moderado' | 'Alto' | 'Crítico';
+  congestionamentoPrevistoPercentual: number;
+  equipamentosComFalhaOuManutencao: number;
+  totalEquipamentos: number;
+  acidentesRecentes: number;
+  amostrasDeTransito: number;
+  dadosSimulados: boolean;
+  fatoresContribuintes: string[];
+};
+
+export type RecomendacaoReforco = {
+  cidade: string;
+  regiao: string;
+  referencia: string;
+  indiceRisco: number;
+  agentesSugeridos: number;
+  inicioPrevisto: string;
+  fimPrevisto: string;
+  justificativa: string;
+};
+
+export type PontoCalor = { latitude: number; longitude: number; peso: number };
+
+export type PredicoesOperacionais = {
+  indiceRiscoPorRegiao: IndiceRiscoRegiao[];
+  recomendacoesReforco: RecomendacaoReforco[];
+  pontosCalor: PontoCalor[];
+  geradoEm: string;
+  metodologia: string;
+};

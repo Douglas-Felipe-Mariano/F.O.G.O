@@ -5,7 +5,7 @@ import MapaEquipamentos, { CameraMarcador, LocalizacaoAgente, LocalizacaoEquipam
 import { CameraPublica, CatalogoCameras, VideoCameraModal } from './CamerasPublicas';
 import HistoricoAgenteModal, { PaginaHistoricoAgente } from './HistoricoAgenteModal';
 import PainelOperacoes from './PainelOperacoes';
-import { AcidenteMapa, TransitoMapa } from './OperacoesTipos';
+import { AcidenteMapa, PontoCalor, TransitoMapa } from './OperacoesTipos';
 import './App.css';
 import './Visoes.css';
 import './FilaManutencao.css';
@@ -133,6 +133,7 @@ function App() {
   const [erroCameras, setErroCameras] = useState('');
   const [transitoMapa, setTransitoMapa] = useState<TransitoMapa[]>([]);
   const [acidentesMapa, setAcidentesMapa] = useState<AcidenteMapa[]>([]);
+  const [pontosCalor, setPontosCalor] = useState<PontoCalor[]>([]);
   const [selecionandoLocalAcidente, setSelecionandoLocalAcidente] = useState(false);
   const [localAcidenteSelecionado, setLocalAcidenteSelecionado] = useState<LocalizacaoUsuario | null>(null);
   const [carregandoMapa, setCarregandoMapa] = useState(false);
@@ -305,10 +306,7 @@ function App() {
   }, [carregarTodasLocalizacoes, pesquisaMapa, token]);
 
   const solicitarLocalizacaoUsuario = useCallback(() => {
-    if (localizacaoUsuario) {
-      setEnquadramentoMapa('usuario');
-      return;
-    }
+    if (localizacaoUsuario) setEnquadramentoMapa('usuario');
 
     if (!navigator.geolocation) {
       setEstadoLocalizacaoUsuario('indisponivel');
@@ -328,6 +326,15 @@ function App() {
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     );
   }, [localizacaoUsuario]);
+
+  useEffect(() => {
+    if (!token || visao !== 'mapa' || localizacaoUsuario || !navigator.permissions?.query) return;
+    void navigator.permissions.query({ name: 'geolocation' })
+      .then((permissao) => {
+        if (permissao.state === 'granted') solicitarLocalizacaoUsuario();
+      })
+      .catch(() => { /* O botão do mapa continua permitindo uma solicitação explícita. */ });
+  }, [localizacaoUsuario, solicitarLocalizacaoUsuario, token, visao]);
 
   const atualizacaoTempoReal = useRef({ carregarDados, carregarMapa, visao });
   useEffect(() => {
@@ -889,19 +896,24 @@ function App() {
               localSelecionado={localAcidenteSelecionado}
               selecionandoLocal={selecionandoLocalAcidente}
               onSolicitarSelecao={setSelecionandoLocalAcidente}
+              onLimparLocalSelecionado={() => setLocalAcidenteSelecionado(null)}
               onTransitoAtualizado={setTransitoMapa}
               onAcidentesAtualizados={setAcidentesMapa}
+              onPontosCalorAtualizados={setPontosCalor}
             />
-            <div className="mapa-conteudo">
+            <div className="mapa-conteudo" id="mapa-operacional">
               <MapaEquipamentos
                 equipamentos={equipamentosMapa}
                 agentes={agentesMapa}
                 cameras={camerasMapa}
                 transito={transitoMapa}
                 acidentes={acidentesMapa}
+                localAcidenteSelecionado={localAcidenteSelecionado}
+                pontosCalor={pontosCalor}
                 selecionarLocalAcidente={selecionandoLocalAcidente}
                 onSelecionarLocalAcidente={(coordenadas) => { setLocalAcidenteSelecionado(coordenadas); setSelecionandoLocalAcidente(false); }}
                 localizacaoUsuario={localizacaoUsuario}
+                onSolicitarLocalizacao={solicitarLocalizacaoUsuario}
                 enquadramento={enquadramentoMapa}
                 onEditarEquipamento={(id) => void editarEquipamentoDoMapa(id)}
                 onEditarAgente={abrirEdicaoAgenteDoMapa}

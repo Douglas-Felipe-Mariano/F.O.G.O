@@ -136,3 +136,35 @@ public sealed record AlertaOperacionalResposta(
     decimal? Longitude,
     OrigemRegistro OrigemDados,
     DateTimeOffset GeradoEm);
+
+public sealed record IndiceRiscoRegiaoResposta(
+    string Bairro,
+    string Cidade,
+    int IndiceRisco,
+    string Classificacao,
+    int CongestionamentoPrevistoPercentual,
+    int EquipamentosComFalhaOuManutencao,
+    int TotalEquipamentos,
+    int AcidentesRecentes,
+    int AmostrasDeTransito,
+    bool DadosSimulados,
+    IReadOnlyCollection<string> FatoresContribuintes);
+
+public sealed record RecomendacaoReforcoResposta(
+    string Cidade,
+    string Regiao,
+    string Referencia,
+    int IndiceRisco,
+    int AgentesSugeridos,
+    DateTimeOffset InicioPrevisto,
+    DateTimeOffset FimPrevisto,
+    string Justificativa);
+
+public sealed record PontoCalorResposta(decimal Latitude, decimal Longitude, int Peso);
+
+public sealed record PredicoesOperacionaisResposta(
+    IReadOnlyCollection<IndiceRiscoRegiaoResposta> IndiceRiscoPorRegiao,
+    IReadOnlyCollection<RecomendacaoReforcoResposta> RecomendacoesReforco,
+    IReadOnlyCollection<PontoCalorResposta> PontosCalor,
+    DateTimeOffset GeradoEm,
+    string Metodologia);

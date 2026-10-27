@@ -238,13 +238,13 @@ namespace Fogo.Api.Identity.Migrations
                         .HasColumnName("endereco");
 
                     b.Property<decimal?>("Latitude")
-                        .HasPrecision(9, 6)
-                        .HasColumnType("numeric(9,6)")
+                        .HasPrecision(10, 7)
+                        .HasColumnType("numeric(10,7)")
                         .HasColumnName("latitude");
 
                     b.Property<decimal?>("Longitude")
-                        .HasPrecision(9, 6)
-                        .HasColumnType("numeric(9,6)")
+                        .HasPrecision(10, 7)
+                        .HasColumnType("numeric(10,7)")
                         .HasColumnName("longitude");
 
                     b.Property<string>("Nome")

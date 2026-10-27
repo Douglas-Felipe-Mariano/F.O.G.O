@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
-import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
-import { divIcon, LatLngBounds } from 'leaflet';
+import { useEffect, useRef, useState } from 'react';
+import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { divIcon, DomEvent, LatLngBounds } from 'leaflet';
 import { CameraPublica } from './CamerasPublicas';
-import { AcidenteMapa, TransitoMapa } from './OperacoesTipos';
+import { AcidenteMapa, PontoCalor, TransitoMapa } from './OperacoesTipos';
 import 'leaflet/dist/leaflet.css';
 import './MapaEquipamentos.css';
 import './MapaMarcadores.css';
+import './MapaCalor.css';
 
 export type LocalizacaoEquipamento = {
   id: string;
@@ -58,8 +59,11 @@ type Props = {
   cameras?: CameraMarcador[];
   transito?: TransitoMapa[];
   acidentes?: AcidenteMapa[];
+  localAcidenteSelecionado?: LocalizacaoUsuario | null;
+  pontosCalor?: PontoCalor[];
   selecionarLocalAcidente?: boolean;
   onSelecionarLocalAcidente?: (coordenadas: LocalizacaoUsuario) => void;
+  onSolicitarLocalizacao?: () => void;
   localizacaoUsuario?: LocalizacaoUsuario | null;
   enquadramento?: 'usuario' | 'todos';
   onEditarEquipamento?: (id: string) => void;
@@ -171,6 +175,7 @@ function AjustarEnquadramento({ equipamentos, agentes = [], cameras = [], transi
       ...cameras.map((camera) => [camera.latitude, camera.longitude] as [number, number]),
       ...transito.map(({ latitude, longitude }) => [latitude, longitude] as [number, number]),
       ...acidentes.map(({ latitude, longitude }) => [latitude, longitude] as [number, number]),
+      ...(localizacaoUsuario ? [[localizacaoUsuario.latitude, localizacaoUsuario.longitude] as [number, number]] : []),
     ];
     if (enquadramento === 'usuario' && localizacaoUsuario) {
       mapa.setView([localizacaoUsuario.latitude, localizacaoUsuario.longitude], 14);
@@ -193,7 +198,60 @@ function AjustarEnquadramento({ equipamentos, agentes = [], cameras = [], transi
   return null;
 }
 
-export default function MapaEquipamentos({ equipamentos, agentes = [], cameras = [], transito = [], acidentes = [], selecionarLocalAcidente = false, onSelecionarLocalAcidente, localizacaoUsuario, enquadramento = 'usuario', onEditarEquipamento, onEditarAgente, onVerHistoricoAgente, onReproduzirCamera }: Props) {
+function ControlesMapa({
+  localizacaoUsuario,
+  solicitarLocalizacao,
+  mostrarMapaCalor,
+  alternarMapaCalor,
+}: {
+  localizacaoUsuario?: LocalizacaoUsuario | null;
+  solicitarLocalizacao?: () => void;
+  mostrarMapaCalor: boolean;
+  alternarMapaCalor: () => void;
+}) {
+  const mapa = useMap();
+  const controleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (controleRef.current) DomEvent.disableClickPropagation(controleRef.current);
+  }, []);
+
+  return (
+    <div className="leaflet-top leaflet-right mapa-controles-fogo" ref={controleRef}>
+      <div className="leaflet-control mapa-controles-fogo-botoes">
+        <button type="button" className={`mapa-controle-botao${mostrarMapaCalor ? ' ativo' : ''}`} aria-pressed={mostrarMapaCalor} onClick={alternarMapaCalor}>🔥 Mapa de Calor</button>
+        <button type="button" className="mapa-controle-botao" onClick={() => {
+          if (!localizacaoUsuario) {
+            solicitarLocalizacao?.();
+            return;
+          }
+          mapa.flyTo([localizacaoUsuario.latitude, localizacaoUsuario.longitude], 15, { duration: 0.7 });
+        }}>⌖ Focar minha localização</button>
+      </div>
+    </div>
+  );
+}
+
+function CamadaCalor({ pontosCalor, ativa }: { pontosCalor: PontoCalor[]; ativa: boolean }) {
+  if (!ativa) return null;
+  return <>{pontosCalor.map((ponto) => {
+    const intensidade = Math.max(0, Math.min(100, ponto.peso));
+    const cor = intensidade >= 75 ? '#ef5148' : intensidade >= 50 ? '#f39448' : intensidade >= 25 ? '#e5d45f' : '#61c98a';
+    return (
+      <CircleMarker
+        key={`${ponto.latitude}:${ponto.longitude}`}
+        center={[ponto.latitude, ponto.longitude]}
+        radius={8 + intensidade * 0.2}
+        pathOptions={{ color: cor, weight: 1, fillColor: cor, fillOpacity: 0.18 + intensidade * 0.004 }}
+      >
+        <Popup><div className="popup-equipamento"><strong>Intensidade preditiva: {intensidade}/100</strong><span>Área de atenção calculada por trânsito, manutenção/falhas e ocorrências recentes.</span><span>Índice heurístico para apoio à decisão; não representa probabilidade validada.</span></div></Popup>
+      </CircleMarker>
+    );
+  })}</>;
+}
+
+export default function MapaEquipamentos({ equipamentos, agentes = [], cameras = [], transito = [], acidentes = [], localAcidenteSelecionado, pontosCalor = [], selecionarLocalAcidente = false, onSelecionarLocalAcidente, onSolicitarLocalizacao, localizacaoUsuario, enquadramento = 'usuario', onEditarEquipamento, onEditarAgente, onVerHistoricoAgente, onReproduzirCamera }: Props) {
+  const [mostrarMapaCalor, setMostrarMapaCalor] = useState(false);
   return (
     <div className={`mapa-equipamentos${selecionarLocalAcidente ? ' mapa-selecionando-acidente' : ''}`} aria-label="Mapa de equipamentos, agentes, trânsito e ocorrências georreferenciadas">
       <MapContainer center={centroTupa} zoom={12} scrollWheelZoom className="mapa-leaflet">
@@ -201,6 +259,13 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <ControlesMapa
+          localizacaoUsuario={localizacaoUsuario}
+          solicitarLocalizacao={onSolicitarLocalizacao}
+          mostrarMapaCalor={mostrarMapaCalor}
+          alternarMapaCalor={() => setMostrarMapaCalor((atual) => !atual)}
+        />
+        <CamadaCalor pontosCalor={pontosCalor} ativa={mostrarMapaCalor} />
         <AjustarEnquadramento equipamentos={equipamentos} agentes={agentes} cameras={cameras} transito={transito} acidentes={acidentes} localizacaoUsuario={localizacaoUsuario} enquadramento={enquadramento} />
         <CapturarLocalAcidente ativo={selecionarLocalAcidente} aoSelecionar={onSelecionarLocalAcidente} />
         {transito.map((item) => (
@@ -274,7 +339,9 @@ export default function MapaEquipamentos({ equipamentos, agentes = [], cameras =
             <Popup><div className="popup-equipamento"><strong>Você está aqui</strong><span>Sua localização atual, obtida pelo navegador e visível somente nesta sessão.</span></div></Popup>
           </Marker>
         )}
+        {localAcidenteSelecionado && <CircleMarker center={[localAcidenteSelecionado.latitude, localAcidenteSelecionado.longitude]} radius={11} pathOptions={{ color: '#ffffff', weight: 3, fillColor: '#f0ae62', fillOpacity: 0.95 }}><Popup><div className="popup-equipamento"><strong>Ponto do acidente selecionado</strong><span>Este local ainda não foi salvo.</span><span>{localAcidenteSelecionado.latitude.toFixed(6)}, {localAcidenteSelecionado.longitude.toFixed(6)}</span></div></Popup></CircleMarker>}
       </MapContainer>
+      {selecionarLocalAcidente && <div className="mapa-selecao-acidente-banner" role="status">Clique no mapa para marcar o local do acidente</div>}
     </div>
   );
 }

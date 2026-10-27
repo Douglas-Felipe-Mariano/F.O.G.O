@@ -63,9 +63,11 @@ public sealed class OperacoesControllerTests : IClassFixture<ConfiguracaoFogoWeb
 
         var respostaTransito = await cliente.GetAsync("/api/operacoes/transito");
         var respostaAcidentes = await cliente.GetAsync("/api/operacoes/acidentes");
+        var respostaPredicoes = await cliente.GetAsync("/api/operacoes/predicoes");
 
         Assert.Equal(StatusCodes.Status401Unauthorized, (int)respostaTransito.StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized, (int)respostaAcidentes.StatusCode);
+        Assert.Equal(StatusCodes.Status401Unauthorized, (int)respostaPredicoes.StatusCode);
     }
 
     private OperacoesController CriarControlador() => new(new OperacoesService(null!, TimeProvider.System))
