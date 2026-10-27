@@ -1,86 +1,133 @@
 # F.O.G.O.
 
-Ferramenta Onisciente de Gestão e Operações — etapa bônus do desafio da Dsin.
+**Ferramenta Onisciente de Gestão e Operações** — plataforma web de demonstração para organizar equipamentos urbanos, equipes e ocorrências em um mapa operacional.
 
-## Estado
+## O que é
 
-O F.O.G.O. reúne inventário de equipamentos com características livres, quadro de agentes, mapa operacional, histórico demonstrativo de trânsito, alertas derivados e registro de acidentes. A aplicação oferece autenticação, filtros e atualização de telas via SignalR. Dados de trânsito e predições atuais são sintéticos/heurísticos, não telemetria nem previsões operacionais confiáveis. As ações de despacho e socorro registram solicitações internamente e não contatam serviços externos. Consulte as premissas em [docs/arquitetura.md](docs/arquitetura.md).
+O F.O.G.O. reúne, em uma única interface autenticada:
 
-**Estado em 27/10/2026:** o mapa combinado inclui indicadores, agentes, equipamentos, câmeras, congestionamento e ocorrências georreferenciadas. Câmeras sem posição própria ficam em agrupamentos de referência municipal aproximada, diferenciados de pontos exatos; os números de equipamentos/agentes sem coordenadas são informados e tais registros não podem ser plotados. O mapa enquadra os pontos por padrão e oferece geolocalização do usuário como ação explícita. A consulta autenticada à API pública Overpass pode exibir objetos `highway=speed_camera` do OpenStreetMap. A migration de demonstração inclui quatro agentes, três radares ilustrativos e observações horárias sintéticas em cinco municípios; isso não representa pessoas, sensores, tráfego medido ou trechos monitorados reais. A predição média por horário/dia é uma heurística demonstrativa, sem validação operacional.
+- inventário de equipamentos, situação, manutenção e atributos flexíveis;
+- cadastro e consulta de agentes, com posições cadastradas manualmente;
+- mapa interativo com equipamentos, agentes, câmeras públicas, trânsito e acidentes em aberto;
+- registro de acidentes com seleção do local diretamente no mapa, grau, impacto no trânsito e informação sobre feridos;
+- indicadores, alertas e painel de inteligência preditiva PROMETHEUS;
+- mapa de calor e localização do usuário mediante autorização do navegador.
 
-A migration de câmeras públicas cadastra 94 transmissões encontradas nos portais municipais de 15 cidades. Coordenadas individuais permanecem restritas às posições identificadas; câmeras sem posição própria são agrupadas no centro municipal OSM com aviso de aproximação e não devem ser interpretadas como localização física do dispositivo. O player carrega a transmissão somente após ação do usuário. O histórico de agentes contém apenas posições persistidas; não há telemetria contínua.
+### Limites importantes
 
-A relação exata de cidade e ponto conforme indicado no portal está em [docs/cameras-publicas-localidades.csv](docs/cameras-publicas-localidades.csv), pronta para conferência geográfica. Coordenadas de locais de referência (praças, fachadas, parques ou trechos de avenida) ajudam a situar o nome, mas não localizam necessariamente a câmera; só use-as após confirmação explícita de que a câmera está naquele ponto. Os seis cruzamentos classificados como `VALIDADO` na lista fornecida foram adicionados por migration incremental.
+- Os dados de trânsito pré-carregados são **demonstrativos e simulados**. O PROMETHEUS usa regras heurísticas para apoio à decisão; não é uma probabilidade calibrada, não é um modelo treinado nem uma previsão validada.
+- A situação e a localização de agentes são dados cadastrados; a plataforma não faz rastreamento contínuo.
+- A posição municipal aproximada de uma câmera, quando usada, não representa a localização exata do dispositivo. A disponibilidade dos streams depende da fonte pública.
+- Registrar despacho ou acionamento de socorro apenas grava a solicitação na plataforma. Não contata agentes nem serviços de emergência.
+- O mapa base e algumas fontes públicas precisam de acesso à internet.
 
-Nesta máquina, os SDKs .NET 10.0.403 e Node.js 24.22.1/npm 11.19.1 estão em diretório local do usuário, fora do repositório. No PowerShell, pode ser necessário incluir `%LOCALAPPDATA%\FogoTools\dotnet` e `%LOCALAPPDATA%\FogoTools\node-v24.22.1-win-x64` no `PATH`; use `npm.cmd` se a política local bloquear scripts `.ps1`. O Docker Desktop foi iniciado; a stack e o PostgreSQL foram validados em runtime.
+## Como executar localmente
 
-No desenvolvimento, o Vite encaminha `/api` para `https://localhost:7001`. Se o perfil local da API usar outra porta, defina `FOGO_API_URL` antes de iniciar o frontend. O navegador precisa confiar no certificado HTTPS de desenvolvimento da API.
+### Requisitos
 
-## Direção técnica
+- Docker Desktop ou Docker Engine com Docker Compose;
+- terminal na pasta raiz do repositório.
 
-- Backend: ASP.NET Core Web API com C#.
+### 1. Configurar segredos locais
+
+Crie uma cópia local do arquivo de exemplo:
+
+**PowerShell**
+
+```powershell
+Copy-Item .env.example .env
+```
+
+**Linux/macOS**
+
+```sh
+cp .env.example .env
+```
+
+Edite `.env` e defina:
+
+- `POSTGRES_PASSWORD`: senha forte e exclusiva para o banco local;
+- `FOGO_JWT_KEY`: chave aleatória com pelo menos 32 bytes.
+
+Não versione nem compartilhe `.env` ou seus valores. O e-mail via SMTP é opcional para a inicialização; sem SMTP, o provisionamento local abaixo permite criar a conta inicial. Para cadastro e recuperação de senha por e-mail, configure as variáveis SMTP existentes em `.env.example`.
+
+### 2. Iniciar a plataforma
+
+Na raiz do repositório:
+
+```sh
+docker compose up --build -d
+```
+
+O Compose inicia PostgreSQL, API e frontend. A API aplica as migrations automaticamente, e o banco conserva os dados no volume `dados_postgres`. Aguarde os serviços ficarem prontos e abra:
+
+**http://localhost:8080**
+
+Para conferir o estado dos serviços:
+
+```sh
+docker compose ps
+```
+
+O endpoint de saúde da API é `http://localhost:8080/api/saude`.
+
+### 3. Criar a primeira conta
+
+Não há conta padrão. Com a stack em execução, rode no terminal interativo:
+
+```sh
+docker compose exec -it api dotnet Fogo.Api.dll --provisionar-primeiro-usuario
+```
+
+Informe o e-mail e digite uma senha de pelo menos 12 caracteres quando solicitado. A senha não aparece enquanto é digitada. O procedimento local confirma o e-mail da conta. Depois, entre pela página inicial em `http://localhost:8080`.
+
+Para provisionar outra conta localmente, use `--provisionar-usuario` no lugar de `--provisionar-primeiro-usuario`. Guarde o acesso ao terminal e aos comandos de provisionamento apenas para pessoas autorizadas. A aplicação ainda não diferencia permissões entre usuários autenticados.
+
+### 4. Encerrar ou reiniciar
+
+Parar os serviços sem apagar o banco:
+
+```sh
+docker compose down
+```
+
+Iniciá-los novamente:
+
+```sh
+docker compose up -d
+```
+
+**Atenção:** `docker compose down -v` remove também os volumes, inclusive os dados persistidos do banco. Use somente se quiser apagar os dados locais.
+
+## Desenvolvimento e verificações
+
+- Backend: ASP.NET Core Web API, C# e PostgreSQL com Entity Framework Core.
 - Frontend: React, TypeScript e Vite.
-- Persistência: PostgreSQL com Entity Framework Core e migrations; o Compose local mantém os dados no volume `dados_postgres`.
-- Mapa inicial: Leaflet e tiles OpenStreetMap; mostra pontos cadastrados, dados demonstrativos rotulados e, quando disponível, radares mapeados no OpenStreetMap. Mantém atribuição e link à fonte; a geolocalização do navegador exige autorização e não é enviada nem persistida.
-- Autenticação: ASP.NET Core Identity, JWT de acesso mantido em memória, refresh token rotativo persistido somente como hash em cookie `HttpOnly` e proteção CSRF. Cadastro exige confirmação por e-mail; recuperação de senha usa token temporário de uso único. As chaves de Data Protection persistem no volume `dados_protecao_chaves` no Compose.
-- Agentes: cadastro/edição e consulta paginada, filtros por categoria e situação informada, indicadores simples e inclusão de pontos com coordenadas no mapa. A situação é manual; não existe rastreamento em tempo real da equipe.
-- Características por equipamento: objeto JSON de até 30 propriedades textuais (nome até 60 caracteres, valor até 500), preservado em JSONB e mostrado no popup; não existe lista impositiva de campos por tipo.
-- Painel operacional: “instalado” exclui apenas “ainda não instalado”; “indisponível” = instalados menos operacionais; disponibilidade declarada = operacionais/instalados, indefinida sem instalados. “Em atividade declarada” soma agentes Disponíveis e Em atendimento. Isso reflete cadastro manual, não presença nem uptime.
-- Manutenção e localidades: alertas exibem registros imediatos declarados, datas vencidas (antes do dia UTC atual) e datas nos próximos sete dias, agrupados por bairro/cidade/UF. A projeção de 30 dias só soma manutenção programada por data/localidade; não estima falhas.
-- Câmeras públicas: catálogo carregado pela API, player HLS sob demanda, posições individuais quando cadastradas e referências agrupadas no centro municipal para localidades sem geocodificação individual; referências municipais não são posições de câmera.
-- Histórico de agentes: consulta por dia e desenho do trajeto somente a partir de posições gravadas na criação ou alteração de coordenadas.
-- Trânsito e acidentes: endpoints autenticados sob `/api/operacoes`; histórico sintético identificado na origem, média heurística da próxima hora, alertas de manutenção/situação/anomalia/ocorrência e registro persistente de acidente com grau, impacto, feridos e solicitações internas de despacho/socorro. Ações não notificam agente nem serviço de emergência real.
+- Mapa: Leaflet e OpenStreetMap.
 
-No backend, o inventário está organizado em Controllers (HTTP), Application (validação e casos de uso), Repositories (consultas/persistência) e Identity (autenticação e `DbContext`). As migrations EF seguem no projeto da API e permanecem como fonte oficial do esquema.
+Com o .NET 10 instalado, rode os testes do backend a partir da raiz:
 
-## Stack local com Docker Compose
+```sh
+dotnet test backend/Fogo.Tests/Fogo.Tests.csproj
+```
 
-Com Docker Desktop/Engine e Docker Compose instalados, copie `.env.example` para `.env` e substitua `POSTGRES_PASSWORD` por um segredo aleatório URL-safe e `FOGO_JWT_KEY` por uma chave aleatória com pelo menos 32 bytes. Para habilitar cadastro, confirmação e recuperação por e-mail, configure também `FOGO_SMTP_HOST`, `FOGO_SMTP_PORT`, `FOGO_SMTP_USER`, `FOGO_SMTP_PASSWORD`, `FOGO_SMTP_FROM` e `FOGO_PUBLIC_URL`; credenciais SMTP são segredos e nunca devem ser versionadas. Use `FOGO_SMTP_SECURITY=StartTls` (padrão) ou `SslOnConnect` conforme o provedor; não use `None` fora de uma rede local confiável. Não compartilhe nem versione `.env`. Na raiz do projeto, execute `docker compose up --build` e abra `http://localhost:8080`.
+Para compilar o frontend:
 
-O Compose inicia PostgreSQL, API e frontend; somente o frontend é publicado na porta de loopback local 8080. A configuração local permite acessar por `http://localhost:8080` ou `http://127.0.0.1:8080`; os dois endereços são origens diferentes e estão explicitamente na allow-list CORS do Compose, independente de variáveis `FOGO_ORIGINS` herdadas do shell. Como esta stack local usa HTTP, `FOGO_COOKIES_SEGUROS=false` permite que ambos os hosts de loopback recebam os cookies necessários; fora deste Compose o padrão continua exigindo cookies Secure, e qualquer publicação deve usar HTTPS e `FOGO_COOKIES_SEGUROS=true`. O Nginx encaminha `/api` à API pela rede privada do Compose. O volume `dados_postgres` preserva os dados entre reinicializações. A API aguarda o healthcheck do banco, aplica as migrations EF ao iniciar e expõe um healthcheck para que o frontend espere sua prontidão. A migration `AdicionarDadosDemonstracaoTupa` insere dados ilustrativos marcados como simulados; isso não cria usuários automaticamente.
+```sh
+cd frontend
+npm install
+npm run build
+```
 
-Depois que a stack estiver pronta, crie a primeira conta de forma interativa com `docker compose exec -it api dotnet Fogo.Api.dll --provisionar-primeiro-usuario`. Para criar contas adicionais por procedimento local, use `docker compose exec -it api dotnet Fogo.Api.dll --provisionar-usuario`. Ambos os comandos pedem e-mail e senha com confirmação; a senha não é exibida nem deve ser colocada em argumentos, `.env` ou logs. O primeiro comando recusa se já houver usuário; o segundo exige acesso ao terminal da máquina/ambiente e ao banco. Esses comandos confirmam o e-mail pelo procedimento local. Também é possível criar conta pela tela inicial: o endereço precisa ser confirmado pelo link enviado por e-mail antes do primeiro login. “Esqueci minha senha” envia link de redefinição válido por duas horas; as respostas públicas não revelam se um e-mail está cadastrado. SMTP ausente ou indisponível não derruba a API, mas impede a entrega das mensagens. O cadastro público recebe as permissões atualmente disponíveis para usuários autenticados; a aplicação ainda não implementa papéis ou permissões diferenciadas. Configure SMTP e publique a aplicação somente com controle de acesso adequado; conceda acesso aos comandos de provisionamento apenas a operadores confiáveis.
+No PowerShell do Windows, use `npm.cmd` caso a política de execução bloqueie `npm`:
 
-`docker compose down` para a stack sem apagar o volume. `docker compose down -v` também remove o banco persistido e é destrutivo. Esta configuração é para execução local; publicação exige HTTPS no proxy de borda e gestão de segredos própria, não o arquivo `.env`.
+```powershell
+Push-Location frontend
+npm.cmd install
+npm.cmd run build
+Pop-Location
+```
 
-## Configuração local da API
+## Execução fora do ambiente local
 
-Defina `FOGO_JWT_KEY` com pelo menos 32 bytes aleatórios usando um gerenciador de segredos ou variável de ambiente; nunca versione o valor. Configure `ConnectionStrings__PostgreSQL` com uma base PostgreSQL criada para este ambiente e `FOGO_ORIGINS` como lista explícita de origens HTTP/HTTPS separadas por ponto e vírgula. Fora de Development, a API falha ao iniciar se a lista estiver ausente/vazia ou contiver URLs com caminho, consulta ou fragmento. Somente em Development, se omitida, é usada a origem local `http://localhost:5173`. Em desenvolvimento HTTP local, `FOGO_HTTPS_DEV=true` ativa cookies Secure; prefira HTTPS. `FOGO_COOKIES_SEGUROS` pode sobrescrever a política; mantenha `true` em qualquer ambiente servido por HTTPS e não o desative fora do Compose local de loopback. A API também falha ao iniciar se a chave ou conexão não estiver configurada. Respostas 403 no login indicam recusa da origem ou do token CSRF; confirme que `FOGO_ORIGINS` corresponde exatamente ao endereço usado no navegador e atualize a página para obter um novo cookie CSRF.
-
-O cadastro público exige confirmação de e-mail e depende da configuração SMTP. A recuperação usa tokens protegidos por Data Protection e válidos por duas horas. Configure `FOGO_PUBLIC_URL` com a origem HTTPS pública exata (HTTP é aceito somente em loopback local); links não são montados a partir do cabeçalho `Host` da requisição. Os endpoints públicos validam origem e CSRF e têm limitação de requisições. O primeiro usuário ainda pode ser criado pelo comando interativo quando o SMTP não estiver configurado; não há usuário nem senha padrão. Como a matriz de permissões continua pendente, contas criadas publicamente recebem as permissões atualmente disponíveis para todos os usuários autenticados.
-
-Com a API em execução, iniciar `npm.cmd run dev` dentro de `frontend/` abre o portal em `http://localhost:5173`; o navegador solicita o cookie CSRF ao backend e API/hub SignalR são acessados pelos proxies Vite. No portal, crie uma conta e confirme o e-mail; sem SMTP configurado, use o provisionamento local documentado acima.
-
-## Próximas etapas
-
-1. Iniciar o Docker Engine e executar a stack Compose; as migrations são aplicadas na inicialização, sem criar registros de domínio nem contas.
-2. Criar o primeiro usuário pelo procedimento local seguro e validar login, sessões, migrations e operações com PostgreSQL real.
-3. Fazer a revisão final de segurança/permissões e testar os fluxos da aplicação em navegador contra a stack integrada.
-4. Confirmar com o responsável as regras provisórias de indicadores e janelas antes de tratá-las como política institucional.
-5. Avaliar fontes autorizadas e histórico disponível antes de considerar previsão de incidentes, falhas ou demanda.
-6. Integrar uma fonte autorizada de tráfego em tempo real e validar segmentos/medidas antes de utilizar projeções operacionalmente; manter os dados simulados rotulados.
-
-## Validação executada
-
-- `dotnet test backend/Fogo.Tests/Fogo.Tests.csproj --no-restore`: 82 testes passaram nesta revisão; incluem autenticação/autorização, proteção CSRF, inventário, agentes e validação de ocorrências. Não substituem testes de integração com serviços externos.
-- `dotnet build backend/Fogo.Api/Fogo.Api.csproj --no-restore`: passou.
-- A migration `AdicionarCamerasPublicasEHistoricoAgentes` foi gerada pelo EF Core com arquivo Designer e snapshot atualizado. O script SQL foi gerado sem aplicação ao banco e contém 94 inserções de câmeras; a validação do modelo não detectou alterações pendentes.
-- Migration incremental de equipamentos também gerada. O espelho SQL para leitura da arquitetura do banco está em `backend/database/CREATE.sql` e não contém dados iniciais.
-- `npm install` em `frontend/`: passou, 0 vulnerabilidades reportadas.
-- `npm run build` em `frontend/`: passou (TypeScript e Vite).
-- `npm audit` em `frontend/`: nenhum pacote vulnerável reportado.
-- Docker Compose: stack reconstruída com `docker compose up -d --build api frontend`; PostgreSQL e API saudáveis. A migration `20261027051631_AdicionarTransitoEAcidentes` foi aplicada; criou o esquema de trânsito/acidentes, cinco referências municipais e 3.365 observações de trânsito `Simulado`; não inseriu acidentes fictícios. A tabela de incidentes está vazia até o registro de uma ocorrência real ou de teste.
-- `frontend/`: mapa Leaflet é a primeira visão após autenticação, usa ícones distintos para equipamento e agente, pagina a consulta e exibe origem simulada. A localização do usuário depende de autorização do navegador e permanece na sessão; a consulta de radares Overpass é opcional e não foi possível confirmar resultados reais da região durante a validação (indisponibilidade externa). Tiles OpenStreetMap exigem internet.
-- SignalR: evento `equipamentoAlterado` após criação/atualização persistida; clientes autenticados recarregam inventário/indicadores e o mapa aberto. A entrega é transitória (sem outbox), portanto a reconexão também recarrega dados pela API.
-- Auditoria NuGet dos projetos API e testes: nenhum pacote vulnerável reportado.
-- PostgreSQL Compose e aplicação automática das migrations foram validados nesta execução. `backend/database/CREATE.sql` continua sendo apenas o espelho SQL de referência, não foi aplicado diretamente.
-
-Os testes do serviço OSM usam respostas simuladas; a disponibilidade de radares reais depende da Overpass API e não foi confirmada na região. Os dados adicionados pela migration são explicitamente demonstrativos, não oficiais.
-
-## Uso de IA
-
-GitHub Copilot foi utilizado como assistente de análise e implementação. O responsável pelo projeto deve revisar e compreender o código antes da entrega.
-
-## Créditos das câmeras públicas
-
-Os nomes e links das transmissões foram consultados nos portais públicos municipais da [Ao Vivo na Net](https://aovivonanet.servicesecurity.com.br/), serviço da Service Security. O catálogo é mantido nesta aplicação por migration; disponibilidade, conteúdo e continuidade dos streams dependem da publicação de origem.
+O Compose deste repositório é voltado à execução local: a porta web fica vinculada ao loopback e a configuração usa HTTP. Não exponha esta configuração diretamente à internet. Uma implantação acessível externamente requer HTTPS, gestão segura de segredos e configuração adequada de domínio, cookies e e-mail. Configure acesso ao sistema de acordo com o ambiente e considere que usuários autenticados têm as mesmas permissões.
