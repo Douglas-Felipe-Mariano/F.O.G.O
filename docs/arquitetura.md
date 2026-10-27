@@ -2,11 +2,19 @@
 
 ## Estado do projeto
 
-Em 27/10/2026, o F.O.G.O. tem autenticação, inventário de equipamentos, cadastro e quadro de agentes, mapa operacional e notificações de alteração via SignalR. Há uma consulta pública opcional de radares mapeados no OpenStreetMap. O painel projeta manutenções usando datas previamente cadastradas; não prevê incidentes nem falhas. A migration de demonstração insere agentes e radares explicitamente simulados em Tupã e cidades próximas.
+Em 27/10/2026, o F.O.G.O. tem autenticação, inventário de equipamentos, cadastro e quadro de agentes, mapa operacional, notificações via SignalR, séries demonstrativas de trânsito, alertas derivados e registro de acidentes. Há também consulta pública opcional de radares OpenStreetMap. As projeções de trânsito são heurísticas sobre dados sintéticos e não prevêem incidentes nem comprovam condições reais. A migration de demonstração insere agentes, radares e histórico de trânsito explicitamente simulados.
 
 O projeto usa ASP.NET Core 10, PostgreSQL e Entity Framework Core no backend; React, TypeScript e Vite no frontend. A arquitetura é um monólito modular, organizado em Controllers, Application Services, Repositories e `FogoDbContext`. Migrations EF são a fonte oficial do esquema e foram aplicadas pela API no PostgreSQL Compose local. `backend/database/CREATE.sql` é um espelho SQL de referência, que deve ser mantido alinhado às migrations; ele não foi aplicado diretamente.
 
 ## Módulos e comportamento
+
+### Câmeras, trânsito e ocorrências
+
+O catálogo público pode conter câmeras sem coordenadas individuais. No mapa, coordenadas próprias são exibidas como posições individuais; registros sem posição individual são agrupados no centro municipal obtido do OpenStreetMap e identificados como referências aproximadas, nunca como localização exata do dispositivo. O catálogo mantém todos os registros e a interface distingue posições individuais, agrupamentos municipais e pontos ainda sem referência. Equipamentos e agentes sem coordenadas também não podem ser plotados.
+
+A migration `20261027051631_AdicionarTransitoEAcidentes` cria segmentos de referência, observações horárias, ocorrências de acidentes e campos para registrar pedidos de despacho/socorro. As 3.365 observações semeadas para cinco municípios têm origem `Simulado`; seus pontos são centros municipais OSM, não sensores nem trechos rodoviários. Nenhum acidente fictício é semeado. A projeção da próxima hora é uma média histórica por hora e dia da semana local, com confiança indicativa baseada na quantidade de amostras; não é ML validado, medição ao vivo nem previsão operacional confiável. Alertas de manutenção, situações declaradas anômalas, desvio heurístico de trânsito, congestionamento previsto e acidentes abertos são derivados dos dados vigentes a cada consulta, não armazenados como notificações independentes.
+
+As ações de despacho e acionamento de socorro gravam intenção e horário no registro do acidente, podendo opcionalmente associar um agente cadastrado. Não notificam agentes, polícia, bombeiros, SAMU ou qualquer serviço externo. A interface declara essa limitação e não deve ser usada em substituição a canais oficiais de emergência. Integrações de trânsito em tempo real exigem uma fonte autorizada, credenciais e validação/licenciamento próprios; nenhuma chave é presumida.
 
 ### Autenticação
 
@@ -34,7 +42,7 @@ Após a autenticação, o mapa é a primeira visão operacional. Ele combina equ
 
 O hub autenticado `/hubs/equipamentos` publica eventos mínimos de alteração depois de uma gravação bem-sucedida. As telas consultam novamente a API em vez de receber dados completos pelo evento. A publicação é best-effort e não usa outbox; ao reconectar, a interface recarrega os dados. O fluxo visual com sessão real, PostgreSQL e WebSocket ainda precisa de validação integrada.
 
-A projeção de manutenção é determinística e cobre somente datas agendadas nos próximos 30 dias. Não existem dados históricos suficientes para previsões de acidente, indisponibilidade, utilização, risco probabilístico ou necessidade de reforço de equipes. Não apresentar a projeção de calendário como previsão de incidentes. A consulta pública OSM depende da disponibilidade e limites da Overpass API; é mantida sob demanda com cache, sem coleta em segundo plano ou gravação no banco. Dados simulados são identificados claramente e nunca devem ser apresentados como oficiais.
+A projeção de manutenção é determinística e cobre somente datas agendadas nos próximos 30 dias. O histórico de tráfego disponível nesta demonstração é sintético e insuficiente para inferências sobre acidentes, indisponibilidade, utilização, risco probabilístico ou reforço de equipes; não apresentar manutenção ou trânsito demonstrativo como previsão operacional. A consulta pública OSM depende da disponibilidade e limites da Overpass API; é mantida sob demanda com cache, sem coleta em segundo plano ou gravação no banco. Dados simulados são identificados claramente e nunca devem ser apresentados como oficiais.
 
 ## Execução local
 
